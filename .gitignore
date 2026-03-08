@@ -1,0 +1,17 @@
+# PlatformIO build artifacts
+firmware/.pio/
+firmware/.vscode/
+
+# Arduino IDE build
+build/
+
+# Sensor documentation (large files)
+*.zip
+HLK-LD2450 Human body tracking detection*/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude plans
+.claude/
