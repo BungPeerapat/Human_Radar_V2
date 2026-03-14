@@ -9,81 +9,220 @@ void ConfigManager::begin() {
     applyDefaults();
     loadFromNVS();
 
-    Log::info("Config loaded: mode=%s, SSID=[%s], device=[%s]",
+    Log::info(TAG_CONFIG, "Config loaded: mode=%s, SSID=[%s], device=[%s]",
               _cfg.wifiMode == 1 ? "STA" : "AP",
               _cfg.wifiSSID,
               _cfg.deviceName);
 
-    if (strlen(_cfg.mqttHost) > 0) {
-        Log::info("MQTT: %s:%d, user=[%s]", _cfg.mqttHost, _cfg.mqttPort, _cfg.mqttUser);
+    static const char* protoNames[] = {"ws","wss","mqtt/tcp","mqtts/tls"};
+    if (_cfg.mqttEnabled && strlen(_cfg.mqttHost) > 0) {
+        Log::info(TAG_CONFIG, "MQTT: enabled, proto=%s, %s:%d",
+                  protoNames[_cfg.mqttProto & 3], _cfg.mqttHost, _cfg.mqttPort);
+    } else {
+        Log::info(TAG_CONFIG, "MQTT: disabled");
+    }
+
+    Log::info(TAG_CONFIG, "Sensor: pubInt=%dms, unmanDly=%dms, tgtTout=%dms, multi=%d, sens=%d",
+              _cfg.publishIntervalMs, _cfg.unmannedDelayMs, _cfg.targetTimeoutMs,
+              _cfg.multiTargetMode, _cfg.sensitivity);
+
+    for (int i = 0; i < 3; i++) {
+        if (_cfg.zones[i].enabled) {
+            Log::info(TAG_CONFIG, "Zone%d: (%d,%d)-(%d,%d)",
+                      i + 1, _cfg.zones[i].x1, _cfg.zones[i].y1,
+                      _cfg.zones[i].x2, _cfg.zones[i].y2);
+        }
     }
 }
 
 void ConfigManager::applyDefaults() {
     memset(&_cfg, 0, sizeof(_cfg));
-    _cfg.wifiMode = 0;  // AP mode
+    _cfg.wifiMode = 0;
     strlcpy(_cfg.deviceName, "HumanRadar", sizeof(_cfg.deviceName));
+    _cfg.mqttProto = 2;        // mqtt/tcp
     _cfg.mqttPort = 1883;
+    _cfg.publishIntervalMs = 100;
+    _cfg.unmannedDelayMs = 5000;
+    _cfg.targetTimeoutMs = 1000;
+    _cfg.multiTargetMode = 1;  // multi-target by default
+    _cfg.sensitivity = 5;      // mid-range
+
+    // Default zone 1: full 6m forward, +-3m wide
+    _cfg.zones[0] = {true, -3000, 0, 3000, 6000};
+    _cfg.zones[1] = {false, 0, 0, 0, 0};
+    _cfg.zones[2] = {false, 0, 0, 0, 0};
 }
 
 void ConfigManager::loadFromNVS() {
-    _prefs.begin(NVS_NAMESPACE, true);  // read-only
+    _prefs.begin(NVS_NAMESPACE, true);
 
+    // WiFi
     _cfg.wifiMode = _prefs.getUChar("wifi_mode", 0);
     _prefs.getString("wifi_ssid", _cfg.wifiSSID, sizeof(_cfg.wifiSSID));
     _prefs.getString("wifi_pass", _cfg.wifiPass, sizeof(_cfg.wifiPass));
+
+    // MQTT
+    _cfg.mqttEnabled = _prefs.getUChar("mqtt_en", 0);
+    _cfg.mqttProto = _prefs.getUChar("mqtt_proto", 2);
     _prefs.getString("mqtt_host", _cfg.mqttHost, sizeof(_cfg.mqttHost));
     _cfg.mqttPort = _prefs.getUShort("mqtt_port", 1883);
     _prefs.getString("mqtt_user", _cfg.mqttUser, sizeof(_cfg.mqttUser));
     _prefs.getString("mqtt_pass", _cfg.mqttPass, sizeof(_cfg.mqttPass));
+
+    // Device
     _prefs.getString("dev_name", _cfg.deviceName, sizeof(_cfg.deviceName));
+
+    // Sensor
+    _cfg.publishIntervalMs = _prefs.getUShort("pub_int", 100);
+    _cfg.unmannedDelayMs = _prefs.getUShort("unm_dly", 5000);
+    _cfg.targetTimeoutMs = _prefs.getUShort("tgt_tout", 1000);
+    _cfg.multiTargetMode = _prefs.getUChar("multi_tgt", 1);
+    _cfg.sensitivity = _prefs.getUChar("sensitivity", 5);
+
+    // Detection zones
+    char key[12];
+    for (int i = 0; i < 3; i++) {
+        snprintf(key, sizeof(key), "z%d_en", i);
+        _cfg.zones[i].enabled = _prefs.getUChar(key, i == 0 ? 1 : 0);
+        snprintf(key, sizeof(key), "z%d_x1", i);
+        _cfg.zones[i].x1 = _prefs.getShort(key, i == 0 ? -3000 : 0);
+        snprintf(key, sizeof(key), "z%d_y1", i);
+        _cfg.zones[i].y1 = _prefs.getShort(key, 0);
+        snprintf(key, sizeof(key), "z%d_x2", i);
+        _cfg.zones[i].x2 = _prefs.getShort(key, i == 0 ? 3000 : 0);
+        snprintf(key, sizeof(key), "z%d_y2", i);
+        _cfg.zones[i].y2 = _prefs.getShort(key, i == 0 ? 6000 : 0);
+    }
 
     _prefs.end();
 }
 
+// ============================================================================
+// WiFi
+// ============================================================================
 void ConfigManager::setWiFi(uint8_t mode, const char* ssid, const char* pass) {
     _cfg.wifiMode = mode;
     strlcpy(_cfg.wifiSSID, ssid, sizeof(_cfg.wifiSSID));
     strlcpy(_cfg.wifiPass, pass, sizeof(_cfg.wifiPass));
 
-    _prefs.begin(NVS_NAMESPACE, false);  // read-write
+    _prefs.begin(NVS_NAMESPACE, false);
     _prefs.putUChar("wifi_mode", mode);
     _prefs.putString("wifi_ssid", ssid);
     _prefs.putString("wifi_pass", pass);
     _prefs.end();
 
-    Log::info("WiFi config saved: mode=%s, SSID=[%s]", mode == 1 ? "STA" : "AP", ssid);
+    Log::info(TAG_CONFIG, "WiFi saved: mode=%s, SSID=[%s]", mode == 1 ? "STA" : "AP", ssid);
 }
 
-void ConfigManager::setMQTT(const char* host, uint16_t port, const char* user, const char* pass) {
+// ============================================================================
+// MQTT
+// ============================================================================
+void ConfigManager::setMQTT(uint8_t enabled, uint8_t proto, const char* host, uint16_t port, const char* user, const char* pass) {
+    _cfg.mqttEnabled = enabled;
+    _cfg.mqttProto = proto;
     strlcpy(_cfg.mqttHost, host, sizeof(_cfg.mqttHost));
     _cfg.mqttPort = port;
     strlcpy(_cfg.mqttUser, user, sizeof(_cfg.mqttUser));
     strlcpy(_cfg.mqttPass, pass, sizeof(_cfg.mqttPass));
 
     _prefs.begin(NVS_NAMESPACE, false);
+    _prefs.putUChar("mqtt_en", enabled);
+    _prefs.putUChar("mqtt_proto", proto);
     _prefs.putString("mqtt_host", host);
     _prefs.putUShort("mqtt_port", port);
     _prefs.putString("mqtt_user", user);
     _prefs.putString("mqtt_pass", pass);
     _prefs.end();
 
-    Log::info("MQTT config saved: %s:%d", host, port);
+    static const char* protoNames[] = {"ws","wss","mqtt/tcp","mqtts/tls"};
+    Log::info(TAG_CONFIG, "MQTT saved: %s, proto=%s, %s:%d",
+              enabled ? "ON" : "OFF", protoNames[proto & 3], host, port);
 }
 
+// ============================================================================
+// Device
+// ============================================================================
 void ConfigManager::setDeviceName(const char* name) {
     strlcpy(_cfg.deviceName, name, sizeof(_cfg.deviceName));
-
     _prefs.begin(NVS_NAMESPACE, false);
     _prefs.putString("dev_name", name);
     _prefs.end();
 }
 
+// ============================================================================
+// Sensor Config
+// ============================================================================
+void ConfigManager::setPublishInterval(uint16_t ms) {
+    _cfg.publishIntervalMs = constrain(ms, 50, 2000);
+    _prefs.begin(NVS_NAMESPACE, false);
+    _prefs.putUShort("pub_int", _cfg.publishIntervalMs);
+    _prefs.end();
+    Log::info(TAG_CONFIG, "Publish interval: %dms", _cfg.publishIntervalMs);
+}
+
+void ConfigManager::setUnmannedDelay(uint16_t ms) {
+    _cfg.unmannedDelayMs = constrain(ms, 1000, 60000);
+    _prefs.begin(NVS_NAMESPACE, false);
+    _prefs.putUShort("unm_dly", _cfg.unmannedDelayMs);
+    _prefs.end();
+    Log::info(TAG_CONFIG, "Unmanned delay: %dms", _cfg.unmannedDelayMs);
+}
+
+void ConfigManager::setTargetTimeout(uint16_t ms) {
+    _cfg.targetTimeoutMs = constrain(ms, 100, 10000);
+    _prefs.begin(NVS_NAMESPACE, false);
+    _prefs.putUShort("tgt_tout", _cfg.targetTimeoutMs);
+    _prefs.end();
+    Log::info(TAG_CONFIG, "Target timeout: %dms", _cfg.targetTimeoutMs);
+}
+
+void ConfigManager::setMultiTargetMode(uint8_t mode) {
+    _cfg.multiTargetMode = mode ? 1 : 0;
+    _prefs.begin(NVS_NAMESPACE, false);
+    _prefs.putUChar("multi_tgt", _cfg.multiTargetMode);
+    _prefs.end();
+    Log::info(TAG_CONFIG, "Multi-target: %s", _cfg.multiTargetMode ? "ON" : "OFF");
+}
+
+void ConfigManager::setSensitivity(uint8_t level) {
+    _cfg.sensitivity = min(level, (uint8_t)9);
+    _prefs.begin(NVS_NAMESPACE, false);
+    _prefs.putUChar("sensitivity", _cfg.sensitivity);
+    _prefs.end();
+    Log::info(TAG_CONFIG, "Sensitivity: %d", _cfg.sensitivity);
+}
+
+void ConfigManager::setZone(uint8_t idx, bool enabled, int16_t x1, int16_t y1, int16_t x2, int16_t y2) {
+    if (idx >= 3) return;
+    _cfg.zones[idx] = {enabled, x1, y1, x2, y2};
+    saveZone(idx);
+    Log::info(TAG_CONFIG, "Zone%d: %s (%d,%d)-(%d,%d)",
+              idx + 1, enabled ? "ON" : "OFF", x1, y1, x2, y2);
+}
+
+void ConfigManager::saveZone(uint8_t idx) {
+    char key[12];
+    _prefs.begin(NVS_NAMESPACE, false);
+    snprintf(key, sizeof(key), "z%d_en", idx);
+    _prefs.putUChar(key, _cfg.zones[idx].enabled ? 1 : 0);
+    snprintf(key, sizeof(key), "z%d_x1", idx);
+    _prefs.putShort(key, _cfg.zones[idx].x1);
+    snprintf(key, sizeof(key), "z%d_y1", idx);
+    _prefs.putShort(key, _cfg.zones[idx].y1);
+    snprintf(key, sizeof(key), "z%d_x2", idx);
+    _prefs.putShort(key, _cfg.zones[idx].x2);
+    snprintf(key, sizeof(key), "z%d_y2", idx);
+    _prefs.putShort(key, _cfg.zones[idx].y2);
+    _prefs.end();
+}
+
+// ============================================================================
+// Reset
+// ============================================================================
 void ConfigManager::resetToDefaults() {
     _prefs.begin(NVS_NAMESPACE, false);
     _prefs.clear();
     _prefs.end();
-
     applyDefaults();
-    Log::info("Config reset to defaults");
+    Log::info(TAG_CONFIG, "Config reset to defaults");
 }

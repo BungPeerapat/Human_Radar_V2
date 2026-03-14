@@ -96,6 +96,24 @@ const char RADAR_HTML[] PROGMEM = R"rawliteral(
   .color-t1 { color: #ff4444; }
   .color-t2 { color: #44ff44; }
   .color-t3 { color: #4488ff; }
+  #setup-banner {
+    display: none;
+    width: 100%;
+    max-width: 600px;
+    margin: 8px auto;
+    padding: 12px 16px;
+    background: #2a1a00;
+    border: 1px solid #ff8800;
+    border-radius: 8px;
+    color: #ffaa33;
+    font-size: 13px;
+    text-align: center;
+  }
+  #setup-banner a {
+    color: #ffdd66;
+    font-weight: bold;
+    text-decoration: underline;
+  }
 </style>
 </head>
 <body>
@@ -105,6 +123,10 @@ const char RADAR_HTML[] PROGMEM = R"rawliteral(
   <a id="settings-btn" href="/settings">SETTINGS</a>
   <br>
   <span id="status" class="disconnected">DISCONNECTED</span>
+</div>
+
+<div id="setup-banner">
+  &#9888; MQTT not configured. <a href="/settings">Open Settings</a> to connect to your MQTT broker.
 </div>
 
 <div id="radar-container">
@@ -367,6 +389,15 @@ function updateRadar(data) {
     }
   }
 }
+
+// ============================================================================
+// Setup Banner - show if MQTT not configured
+// ============================================================================
+fetch('/api/config').then(r=>r.json()).then(cfg=>{
+  if(!cfg.me || !cfg.mh || cfg.mh.length===0){
+    document.getElementById('setup-banner').style.display='block';
+  }
+}).catch(()=>{});
 
 // ============================================================================
 // Init

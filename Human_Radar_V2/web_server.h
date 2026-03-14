@@ -3,6 +3,8 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <DNSServer.h>
+#include <ESPmDNS.h>
 #include <WebServer.h>
 #include <WebSocketsServer.h>
 #include "wifi_config.h"
@@ -26,13 +28,16 @@ public:
 private:
     WebServer        _http{WEB_SERVER_PORT};
     WebSocketsServer _ws{WEBSOCKET_PORT};
+    DNSServer        _dns;
     bool             _ready = false;
+    bool             _isAP = false;
     String           _ip;
     uint8_t          _clientCount = 0;
 
     void setupWiFi();
     void setupHTTP();
     void setupWebSocket();
+    void setupMDNS();
 
     // API handlers
     void handleGetConfig();

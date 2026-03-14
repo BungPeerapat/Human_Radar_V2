@@ -96,6 +96,49 @@ const char SETTINGS_HTML[] PROGMEM = R"rawliteral(
   }
   .status-label { color: #888899; }
   .status-val { color: #00ff88; }
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 8px 0;
+  }
+  .toggle-label {
+    font-size: 13px;
+    color: #cccccc;
+  }
+  .switch {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    flex-shrink: 0;
+  }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #2a2a4a;
+    border-radius: 26px;
+    transition: 0.3s;
+  }
+  .slider:before {
+    content: "";
+    position: absolute;
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background: #555577;
+    border-radius: 50%;
+    transition: 0.3s;
+  }
+  .switch input:checked + .slider {
+    background: #00aa55;
+  }
+  .switch input:checked + .slider:before {
+    transform: translateX(22px);
+    background: #ffffff;
+  }
 </style>
 </head>
 <body>
@@ -123,6 +166,10 @@ const char SETTINGS_HTML[] PROGMEM = R"rawliteral(
     <span class="status-label">Device Name:</span>
     <span class="status-val" id="cur-name">---</span>
   </div>
+  <div class="status-row">
+    <span class="status-label">MQTT:</span>
+    <span class="status-val" id="cur-mqtt">---</span>
+  </div>
 </div>
 
 <!-- WiFi Settings -->
@@ -148,20 +195,48 @@ const char SETTINGS_HTML[] PROGMEM = R"rawliteral(
   </p>
 </div>
 
-<!-- MQTT Settings (future) -->
+<!-- MQTT Settings -->
 <div class="card">
-  <h2>MQTT (for future use)</h2>
-  <label>Broker Host / IP</label>
-  <input type="text" id="mqtt_host" maxlength="64" placeholder="e.g. 192.168.1.100 or broker.hivemq.com">
+  <h2>MQTT</h2>
+  <div class="status-row" style="margin-bottom:8px;">
+    <span class="status-label">Status:</span>
+    <span class="status-val" id="mqtt-status">---</span>
+  </div>
 
-  <label>Port</label>
-  <input type="number" id="mqtt_port" value="1883" min="1" max="65535">
+  <div class="toggle-row">
+    <span class="toggle-label">Enable MQTT</span>
+    <label class="switch">
+      <input type="checkbox" id="mqtt_en" onchange="toggleMqttFields()">
+      <span class="slider"></span>
+    </label>
+  </div>
 
-  <label>Username (optional)</label>
-  <input type="text" id="mqtt_user" maxlength="32" placeholder="Leave empty if not required">
+  <div id="mqtt-fields">
+    <label>Protocol</label>
+    <select id="mqtt_proto" onchange="onProtoChange()">
+      <option value="0">ws</option>
+      <option value="1">wss</option>
+      <option value="2" selected>mqtt / tcp</option>
+      <option value="3">mqtts / tls</option>
+    </select>
 
-  <label>Password (optional)</label>
-  <input type="password" id="mqtt_pass" maxlength="64" placeholder="Leave empty if not required">
+    <label>Broker Host / IP</label>
+    <input type="text" id="mqtt_host" maxlength="64" placeholder="e.g. 192.168.1.100 or broker.hivemq.com">
+
+    <label>Port</label>
+    <input type="number" id="mqtt_port" value="1883" min="1" max="65535">
+
+    <label>Username (optional)</label>
+    <input type="text" id="mqtt_user" maxlength="32" placeholder="Leave empty if not required">
+
+    <label>Password (optional)</label>
+    <input type="password" id="mqtt_pass" maxlength="64" placeholder="Leave empty if not required">
+  </div>
+
+  <p class="info">
+    Topic: humanradar/{device_name}/targets (JSON, 10 Hz)<br>
+    LWT: humanradar/{device_name}/status (online/offline)
+  </p>
 </div>
 
 <!-- Device Settings -->
@@ -169,6 +244,49 @@ const char SETTINGS_HTML[] PROGMEM = R"rawliteral(
   <h2>Device</h2>
   <label>Device Name</label>
   <input type="text" id="dev_name" maxlength="32" placeholder="HumanRadar">
+</div>
+
+<!-- Sensor Settings -->
+<div class="card">
+  <h2>Sensor / Detection</h2>
+
+  <label>Publish Interval (ms) <span class="info" style="display:inline">[50-2000]</span></label>
+  <input type="number" id="pub_int" value="100" min="50" max="2000" step="10">
+
+  <label>Unmanned Delay (ms) <span class="info" style="display:inline">[1000-60000]</span></label>
+  <input type="number" id="unm_dly" value="5000" min="1000" max="60000" step="500">
+
+  <label>Target Timeout (ms) <span class="info" style="display:inline">[100-10000]</span></label>
+  <input type="number" id="tgt_tout" value="1000" min="100" max="10000" step="100">
+
+  <div class="toggle-row">
+    <span class="toggle-label">Multi-Target Mode (up to 3)</span>
+    <label class="switch">
+      <input type="checkbox" id="multi_tgt" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <label>Sensitivity: <span id="sn_val">5</span> <span class="info" style="display:inline">[0-9]</span></label>
+  <input type="range" id="sensitivity" min="0" max="9" value="5"
+    style="background:transparent;border:none;padding:0;"
+    oninput="document.getElementById('sn_val').textContent=this.value">
+
+  <p class="info">
+    Publish Interval: MQTT data rate. Lower = faster updates, more bandwidth.<br>
+    Unmanned Delay: Time with no targets before "no presence" status.<br>
+    Target Timeout: How long before a lost target is removed.<br>
+    Sensitivity: Software filter (0=most strict, 9=least strict).
+  </p>
+</div>
+
+<!-- Firmware Info -->
+<div class="card">
+  <h2>Firmware</h2>
+  <div class="status-row">
+    <span class="status-label">Version:</span>
+    <span class="status-val" id="fw-ver">---</span>
+  </div>
 </div>
 
 <!-- Buttons -->
@@ -184,27 +302,64 @@ fetch('/api/config')
     document.getElementById('wifi_mode').value = cfg.wm;
     document.getElementById('wifi_ssid').value = cfg.ws || '';
     document.getElementById('wifi_pass').value = cfg.wp || '';
+    document.getElementById('mqtt_en').checked = cfg.me == 1;
+    document.getElementById('mqtt_proto').value = cfg.mr != null ? cfg.mr : 2;
     document.getElementById('mqtt_host').value = cfg.mh || '';
     document.getElementById('mqtt_port').value = cfg.mp || 1883;
     document.getElementById('mqtt_user').value = cfg.mu || '';
     document.getElementById('mqtt_pass').value = cfg.mpp || '';
     document.getElementById('dev_name').value  = cfg.dn || 'HumanRadar';
 
+    // Sensor config
+    document.getElementById('pub_int').value = cfg.pi || 100;
+    document.getElementById('unm_dly').value = cfg.ud || 5000;
+    document.getElementById('tgt_tout').value = cfg.tt || 1000;
+    document.getElementById('multi_tgt').checked = cfg.mt == 1;
+    document.getElementById('sensitivity').value = cfg.sn != null ? cfg.sn : 5;
+    document.getElementById('sn_val').textContent = cfg.sn != null ? cfg.sn : 5;
+    document.getElementById('fw-ver').textContent = cfg.fw || '---';
+
     // Status display
     document.getElementById('cur-mode').textContent = cfg.wm == 1 ? 'Station' : 'Access Point';
     document.getElementById('cur-ssid').textContent = cfg.wm == 1 ? (cfg.ws || '---') : 'HumanRadar';
     document.getElementById('cur-ip').textContent = cfg.ip || '---';
     document.getElementById('cur-name').textContent = cfg.dn || 'HumanRadar';
+    var mqttSt = cfg.ms || 'disabled';
+    var protoNames = ['ws','wss','mqtt/tcp','mqtts/tls'];
+    var protoLabel = protoNames[cfg.mr != null ? cfg.mr : 2] || 'mqtt/tcp';
+    var mqttDisplay = mqttSt === 'disabled' ? mqttSt : mqttSt + ' (' + protoLabel + ')';
+    document.getElementById('mqtt-status').textContent = mqttDisplay;
+    document.getElementById('mqtt-status').style.color = mqttSt === 'connected' ? '#00ff88' : (mqttSt === 'disconnected' ? '#ff4444' : '#555577');
+    document.getElementById('cur-mqtt').textContent = mqttDisplay;
+    document.getElementById('cur-mqtt').style.color = mqttSt === 'connected' ? '#00ff88' : (mqttSt === 'disconnected' ? '#ff4444' : '#555577');
 
     toggleStaFields();
+    toggleMqttFields();
   })
   .catch(() => showMsg('Failed to load config', true));
 
 document.getElementById('wifi_mode').addEventListener('change', toggleStaFields);
-
 function toggleStaFields() {
   const mode = document.getElementById('wifi_mode').value;
   document.getElementById('sta-fields').style.display = mode === '1' ? 'block' : 'none';
+}
+
+function toggleMqttFields() {
+  const en = document.getElementById('mqtt_en').checked;
+  document.getElementById('mqtt-fields').style.display = en ? 'block' : 'none';
+}
+
+var defaultPorts = {0: 8083, 1: 8084, 2: 1883, 3: 8883};
+var lastAutoPort = true;
+function onProtoChange() {
+  var proto = document.getElementById('mqtt_proto').value;
+  var portEl = document.getElementById('mqtt_port');
+  var curPort = parseInt(portEl.value);
+  // Auto-set port if it was a default port or empty
+  var isDefault = Object.values(defaultPorts).indexOf(curPort) >= 0 || !curPort;
+  if (isDefault) {
+    portEl.value = defaultPorts[proto] || 1883;
+  }
 }
 
 function showMsg(text, isError) {
@@ -220,11 +375,18 @@ function saveSettings() {
     wm: parseInt(document.getElementById('wifi_mode').value),
     ws: document.getElementById('wifi_ssid').value,
     wp: document.getElementById('wifi_pass').value,
+    me: document.getElementById('mqtt_en').checked ? 1 : 0,
+    mr: parseInt(document.getElementById('mqtt_proto').value),
     mh: document.getElementById('mqtt_host').value,
     mp: parseInt(document.getElementById('mqtt_port').value) || 1883,
     mu: document.getElementById('mqtt_user').value,
     mpp: document.getElementById('mqtt_pass').value,
-    dn: document.getElementById('dev_name').value || 'HumanRadar'
+    dn: document.getElementById('dev_name').value || 'HumanRadar',
+    pi: parseInt(document.getElementById('pub_int').value) || 100,
+    ud: parseInt(document.getElementById('unm_dly').value) || 5000,
+    tt: parseInt(document.getElementById('tgt_tout').value) || 1000,
+    mt: document.getElementById('multi_tgt').checked ? 1 : 0,
+    sn: parseInt(document.getElementById('sensitivity').value) || 5
   };
 
   fetch('/api/config', {

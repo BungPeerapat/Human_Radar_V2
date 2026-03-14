@@ -1,4 +1,5 @@
 #include "web_server.h"
+#include "mqtt_client.h"
 #include "logger.h"
 
 // Global instance
@@ -10,12 +11,21 @@ static WebRadarServer* _instance = nullptr;
 void WebRadarServer::begin() {
     _instance = this;
     setupWiFi();
+    setupMDNS();
     setupHTTP();
     setupWebSocket();
+
+    // Start captive portal DNS in AP mode
+    if (_isAP) {
+        _dns.start(53, "*", WiFi.softAPIP());
+        Log::info("Captive portal DNS started");
+    }
+
     _ready = true;
 }
 
 void WebRadarServer::loop() {
+    if (_isAP) _dns.processNextRequest();
     _ws.loop();
     _http.handleClient();
 }
@@ -55,9 +65,28 @@ start_ap:
     WiFi.mode(WIFI_AP);
     WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS, WIFI_AP_CHANNEL, 0, WIFI_AP_MAX_CONN);
     delay(100);
+    _isAP = true;
     _ip = WiFi.softAPIP().toString();
     Log::info("WiFi AP started: %s (pass: %s)", WIFI_AP_SSID, WIFI_AP_PASS);
     Log::info("IP: %s", _ip.c_str());
+}
+
+// ============================================================================
+// mDNS - access via http://humanradar.local
+// ============================================================================
+void WebRadarServer::setupMDNS() {
+    const DeviceConfig& cfg = configManager.get();
+    // Use device name as mDNS hostname, fallback to "humanradar"
+    String hostname = String(cfg.deviceName);
+    hostname.toLowerCase();
+    hostname.replace(" ", "");
+
+    if (MDNS.begin(hostname.c_str())) {
+        MDNS.addService("http", "tcp", WEB_SERVER_PORT);
+        Log::info("mDNS: http://%s.local", hostname.c_str());
+    } else {
+        Log::error("mDNS failed to start");
+    }
 }
 
 // ============================================================================
@@ -94,6 +123,16 @@ void WebRadarServer::setupHTTP() {
         _http.send(200, "application/json", "{\"status\":\"ok\"}");
     });
 
+    // Captive portal: redirect unknown URLs to /settings in AP mode
+    _http.onNotFound([this]() {
+        if (_isAP) {
+            _http.sendHeader("Location", "http://" + _ip + "/settings", true);
+            _http.send(302, "text/plain", "Redirecting to settings...");
+        } else {
+            _http.send(404, "text/plain", "Not found");
+        }
+    });
+
     _http.begin();
     Log::info("HTTP server on port %d", WEB_SERVER_PORT);
 }
@@ -104,14 +143,27 @@ void WebRadarServer::setupHTTP() {
 void WebRadarServer::handleGetConfig() {
     const DeviceConfig& cfg = configManager.get();
 
-    char json[512];
-    snprintf(json, sizeof(json),
+    char json[1024];
+    int len = snprintf(json, sizeof(json),
         "{\"wm\":%d,\"ws\":\"%s\",\"wp\":\"%s\","
-        "\"mh\":\"%s\",\"mp\":%d,\"mu\":\"%s\",\"mpp\":\"%s\","
-        "\"dn\":\"%s\",\"ip\":\"%s\"}",
+        "\"me\":%d,\"mr\":%d,\"mh\":\"%s\",\"mp\":%d,\"mu\":\"%s\",\"mpp\":\"%s\",\"ms\":\"%s\","
+        "\"dn\":\"%s\",\"ip\":\"%s\","
+        "\"pi\":%d,\"ud\":%d,\"tt\":%d,\"mt\":%d,\"sn\":%d,"
+        "\"z0\":{\"en\":%d,\"x1\":%d,\"y1\":%d,\"x2\":%d,\"y2\":%d},"
+        "\"z1\":{\"en\":%d,\"x1\":%d,\"y1\":%d,\"x2\":%d,\"y2\":%d},"
+        "\"z2\":{\"en\":%d,\"x1\":%d,\"y1\":%d,\"x2\":%d,\"y2\":%d},"
+        "\"fw\":\"%s\"}",
         cfg.wifiMode, cfg.wifiSSID, cfg.wifiPass,
+        cfg.mqttEnabled, cfg.mqttProto,
         cfg.mqttHost, cfg.mqttPort, cfg.mqttUser, cfg.mqttPass,
-        cfg.deviceName, _ip.c_str()
+        mqttClient.getStatusText(),
+        cfg.deviceName, _ip.c_str(),
+        cfg.publishIntervalMs, cfg.unmannedDelayMs, cfg.targetTimeoutMs,
+        cfg.multiTargetMode, cfg.sensitivity,
+        cfg.zones[0].enabled, cfg.zones[0].x1, cfg.zones[0].y1, cfg.zones[0].x2, cfg.zones[0].y2,
+        cfg.zones[1].enabled, cfg.zones[1].x1, cfg.zones[1].y1, cfg.zones[1].x2, cfg.zones[1].y2,
+        cfg.zones[2].enabled, cfg.zones[2].x1, cfg.zones[2].y1, cfg.zones[2].x2, cfg.zones[2].y2,
+        FW_VERSION
     );
 
     _http.send(200, "application/json", json);
@@ -156,17 +208,35 @@ void WebRadarServer::handleSaveConfig() {
     configManager.setWiFi(wm, ws.c_str(), wp.c_str());
 
     // Save MQTT
+    uint8_t me = (uint8_t)getJsonInt("me", 0);
+    uint8_t mr = (uint8_t)getJsonInt("mr", 2);
     String mh = getJsonStr("mh");
     int mp = getJsonInt("mp", 1883);
     String mu = getJsonStr("mu");
     String mpp = getJsonStr("mpp");
-    configManager.setMQTT(mh.c_str(), (uint16_t)mp, mu.c_str(), mpp.c_str());
+    configManager.setMQTT(me, mr, mh.c_str(), (uint16_t)mp, mu.c_str(), mpp.c_str());
 
     // Save device name
     String dn = getJsonStr("dn");
     if (dn.length() > 0) {
         configManager.setDeviceName(dn.c_str());
     }
+
+    // Save sensor config
+    int pi = getJsonInt("pi", -1);
+    if (pi > 0) configManager.setPublishInterval((uint16_t)pi);
+
+    int ud = getJsonInt("ud", -1);
+    if (ud > 0) configManager.setUnmannedDelay((uint16_t)ud);
+
+    int tt = getJsonInt("tt", -1);
+    if (tt > 0) configManager.setTargetTimeout((uint16_t)tt);
+
+    int mt = getJsonInt("mt", -1);
+    if (mt >= 0) configManager.setMultiTargetMode((uint8_t)mt);
+
+    int sn = getJsonInt("sn", -1);
+    if (sn >= 0) configManager.setSensitivity((uint8_t)sn);
 
     _http.send(200, "application/json", "{\"ok\":true}");
 

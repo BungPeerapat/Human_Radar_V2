@@ -1,0 +1,12 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Base.Theme.RadarHumanApplication" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/radar_green</item>
+        <item name="colorOnPrimary">@color/black</item>
+        <item name="colorSurface">@color/radar_bg</item>
+        <item name="colorOnSurface">@color/radar_text</item>
+        <item name="android:statusBarColor">@color/radar_bg</item>
+        <item name="android:navigationBarColor">@color/radar_card</item>
+    </style>
+
+    <style name="Theme.RadarHumanApplication" parent="Base.Theme.RadarHumanApplication" />
+</resources>

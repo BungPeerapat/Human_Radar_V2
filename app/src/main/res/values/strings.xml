@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Human Radar</string>
+    <string name="nav_radar">Radar</string>
+    <string name="nav_dashboard">Dashboard</string>
+    <string name="nav_config">Config</string>
+    <string name="nav_logs">Logs</string>
+</resources>
