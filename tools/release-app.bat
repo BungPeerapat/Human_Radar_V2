@@ -44,68 +44,75 @@ git update-index --refresh >nul 2>&1
 set "HAS_DIRTY="
 git diff --quiet HEAD 2>nul
 if errorlevel 1 set "HAS_DIRTY=1"
-rem Also detect untracked files
 for /f "delims=" %%u in ('git ls-files --others --exclude-standard 2^>nul') do set "HAS_DIRTY=1"
 
-if defined HAS_DIRTY (
-    echo  Uncommitted changes detected:
-    echo.
-    git status --short
-    echo.
-    set /p AUTO_COMMIT="Commit and push everything for me? (Y/n): "
-    if /I "!AUTO_COMMIT!"=="n" (
-        echo.
-        echo  Skipping auto-commit. The release will only include what is
-        echo  already committed and pushed.
-        echo.
-        set /p PROCEED_DIRTY="Continue anyway? (y/N): "
-        if /I not "!PROCEED_DIRTY!"=="y" goto :abort
-    ) else (
-        echo.
-        set "DEFAULT_MSG=chore: prep release"
-        set /p COMMIT_MSG="Commit message [!DEFAULT_MSG!]: "
-        if not defined COMMIT_MSG set "COMMIT_MSG=!DEFAULT_MSG!"
-        echo.
-        echo Staging all changes...
-        git add -A
-        if errorlevel 1 (
-            echo [ERROR] git add failed
-            goto :fail
-        )
-        echo Committing...
-        git commit -m "!COMMIT_MSG!"
-        if errorlevel 1 (
-            echo [ERROR] git commit failed
-            goto :fail
-        )
-        echo Pushing to origin/!BRANCH!...
-        git push origin !BRANCH!
-        if errorlevel 1 (
-            echo [ERROR] git push failed. Check your network or branch protection.
-            goto :fail
-        )
-        echo Done. Working tree is clean.
-    )
-    echo.
-)
+if not defined HAS_DIRTY goto :tree_clean
+
+echo  Uncommitted changes detected:
+echo.
+git status --short
+echo.
+set "AUTO_COMMIT="
+set /p AUTO_COMMIT="Commit and push everything for me? (Y/n): "
+if /I "!AUTO_COMMIT!"=="n" goto :skip_autocommit
+
+set "DEFAULT_MSG=chore: prep release"
+set "COMMIT_MSG="
+set /p COMMIT_MSG="Commit message [!DEFAULT_MSG!]: "
+if not defined COMMIT_MSG set "COMMIT_MSG=!DEFAULT_MSG!"
+echo.
+echo Staging all changes...
+git add -A
+if errorlevel 1 goto :fail_add
+echo Committing...
+git commit -m "!COMMIT_MSG!"
+if errorlevel 1 goto :fail_commit
+echo Pushing to origin/!BRANCH!...
+git push origin !BRANCH!
+if errorlevel 1 goto :fail_push
+echo Done. Working tree is clean.
+echo.
+goto :tree_clean
+
+:skip_autocommit
+echo.
+echo  Skipping auto-commit. The release will only include
+echo  what is already committed and pushed.
+echo.
+set "PROCEED_DIRTY="
+set /p PROCEED_DIRTY="Continue anyway? (y/N): "
+if /I not "!PROCEED_DIRTY!"=="y" goto :abort
+echo.
+goto :tree_clean
+
+:fail_add
+echo [ERROR] git add failed
+goto :fail
+:fail_commit
+echo [ERROR] git commit failed
+goto :fail
+:fail_push
+echo [ERROR] git push failed. Check your network or branch protection.
+goto :fail
+
+:tree_clean
 
 rem ---------- Unpushed commits check ----------
 set "UNPUSHED=0"
 for /f %%n in ('git rev-list "@{u}..HEAD" --count 2^>nul') do set "UNPUSHED=%%n"
-if not "!UNPUSHED!"=="0" (
-    echo  You have !UNPUSHED! local commit(s) not pushed to origin/!BRANCH!
-    echo.
-    set /p PUSH_FIRST="Push them now? (Y/n): "
-    if /I not "!PUSH_FIRST!"=="n" (
-        git push origin !BRANCH!
-        if errorlevel 1 (
-            echo [ERROR] git push failed
-            goto :fail
-        )
-        echo Pushed.
-        echo.
-    )
-)
+if "!UNPUSHED!"=="0" goto :no_unpushed
+
+echo  You have !UNPUSHED! local commit(s) not pushed to origin/!BRANCH!
+echo.
+set "PUSH_FIRST="
+set /p PUSH_FIRST="Push them now? (Y/n): "
+if /I "!PUSH_FIRST!"=="n" goto :no_unpushed
+git push origin !BRANCH!
+if errorlevel 1 goto :fail_push
+echo Pushed.
+echo.
+
+:no_unpushed
 
 rem ============================================================
 rem Step 1: Detect current version
