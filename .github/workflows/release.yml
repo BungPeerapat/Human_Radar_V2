@@ -83,6 +83,26 @@ jobs:
           echo "size=$(stat -c %s "$DEST")" >> "$GITHUB_OUTPUT"
           echo "sha256=$(sha256sum "$DEST" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
 
+      - name: Resolve release notes
+        id: notes
+        run: |
+          TAG="v${{ steps.version.outputs.version_name }}"
+          # Prefer the annotated tag message (set by tools/release-app.bat).
+          # Fall back to the latest commit message for plain `git tag` usage.
+          NOTES=$(git tag -l --format='%(contents)' "$TAG")
+          if [ -z "$(echo "$NOTES" | tr -d '[:space:]')" ]; then
+            NOTES=$(git log -1 --pretty=%B)
+          fi
+          # Save raw notes to a file for the release body (preserves newlines)
+          printf '%s' "$NOTES" > release_notes.md
+          # Save JSON-escaped form for embedding in update.json
+          ESCAPED=$(jq -Rs . < release_notes.md)
+          {
+            echo "notes_json<<NOTES_EOF"
+            echo "$ESCAPED"
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Generate update manifest
         run: |
           REPO="${GITHUB_REPOSITORY}"
@@ -97,7 +117,7 @@ jobs:
             "sha256": "${{ steps.apk.outputs.sha256 }}",
             "sizeBytes": ${{ steps.apk.outputs.size }},
             "mandatory": false,
-            "releaseNotes": $(jq -Rs . <<<"$(git log -1 --pretty=%B)"),
+            "releaseNotes": ${{ steps.notes.outputs.notes_json }},
             "publishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           }
           EOF
@@ -108,7 +128,7 @@ jobs:
         with:
           tag_name: v${{ steps.version.outputs.version_name }}
           name: v${{ steps.version.outputs.version_name }}
-          body_path: /dev/stdin
+          body_path: release_notes.md
           files: |
             ${{ steps.apk.outputs.path }}
             update.json

@@ -34,6 +34,38 @@ In `Settings → Secrets and variables → Actions`:
 
 ## Cutting a release
 
+### Recommended — Interactive (`tools\release-app.bat`)
+
+The simplest way. Walks you through every step:
+
+```cmd
+tools\release-app.bat
+```
+
+What it does:
+
+1. Detects current version from your latest git tag and suggests the next patch
+2. Asks you to type the new version (or press Enter for the suggestion)
+3. Opens Notepad — write your release notes, save, close
+4. Shows a summary screen
+5. Type `Y` to confirm → tag is created and pushed
+6. GitHub Actions takes over: builds, signs, hashes, publishes APK + manifest
+
+You don't need a local keystore for this flow — CI signs the APK with the
+keystore in your GitHub Secrets.
+
+### Other options
+
+If you need different control:
+
+- `tools\release.bat 1.2.0` — full local build + upload (needs keystore on disk + `gh` CLI)
+- `tools\tag-release.bat 1.2.0` — non-interactive, just push tag with no notes
+- Plain `git tag v1.2.0 && git push origin v1.2.0` — manual
+
+---
+
+## Legacy: detailed options
+
 You have **three** options depending on where your keystore lives.
 
 ### Option A — Local end-to-end (`tools\release.bat`)
