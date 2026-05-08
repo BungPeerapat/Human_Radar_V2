@@ -59,6 +59,9 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/keystore/release.jks"
           echo "KEYSTORE_PATH=$RUNNER_TEMP/keystore/release.jks" >> "$GITHUB_ENV"
 
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
       - name: Assemble release APK
         env:
           APP_VERSION_NAME: ${{ steps.version.outputs.version_name }}
