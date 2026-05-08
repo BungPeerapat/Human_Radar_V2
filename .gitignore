@@ -15,3 +15,11 @@ Thumbs.db
 
 # Claude plans
 .claude/
+
+# Local release tooling — never commit keystore credentials
+tools/release.config.bat
+dist/
+*.jks
+*.keystore
+_release_humanradar/
+_release/

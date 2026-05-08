@@ -11,6 +11,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.example.radarhumanapplication.BuildConfig;
+import com.example.radarhumanapplication.update.UpdateDialog;
+import com.example.radarhumanapplication.update.UpdateManager;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.slider.Slider;
@@ -23,8 +26,8 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private TextInputEditText cfgDeviceName, cfgPublishInterval, cfgUnmannedDelay, cfgTargetTimeout;
     private MaterialSwitch cfgMultiTarget;
     private Slider cfgSensitivity;
-    private MaterialButton btnSendConfig;
-    private TextView tvConfigAck;
+    private MaterialButton btnSendConfig, btnCheckUpdate;
+    private TextView tvConfigAck, tvAppVersion;
     private MqttService mqtt;
 
     @Nullable
@@ -47,11 +50,43 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         cfgSensitivity = v.findViewById(R.id.cfg_sensitivity);
         btnSendConfig = v.findViewById(R.id.btn_send_config);
         tvConfigAck = v.findViewById(R.id.tv_config_ack);
+        btnCheckUpdate = v.findViewById(R.id.btn_check_update);
+        tvAppVersion = v.findViewById(R.id.tv_app_version);
 
         cfgDeviceName.setText(mqtt.getDeviceName());
+        tvAppVersion.setText("Current: v" + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")");
 
         btnSendConfig.setOnClickListener(this::onSendConfig);
+        btnCheckUpdate.setOnClickListener(this::onCheckUpdate);
         mqtt.addConfigAckListener(this);
+    }
+
+    private void onCheckUpdate(View v) {
+        btnCheckUpdate.setEnabled(false);
+        btnCheckUpdate.setText("Checking…");
+        UpdateManager.getInstance().checkManual(requireContext(), result -> {
+            if (!isAdded()) return;
+            btnCheckUpdate.setEnabled(true);
+            btnCheckUpdate.setText("CHECK FOR UPDATES");
+            switch (result.status) {
+                case UPDATE_AVAILABLE:
+                    UpdateManager.getInstance().clearSkip(requireContext());
+                    UpdateDialog.show(getParentFragmentManager(), result.info);
+                    break;
+                case UP_TO_DATE:
+                    Toast.makeText(requireContext(), "You are on the latest version", Toast.LENGTH_SHORT).show();
+                    break;
+                case DISABLED:
+                    Toast.makeText(requireContext(), "Update channel not configured", Toast.LENGTH_LONG).show();
+                    break;
+                case ERROR:
+                default:
+                    Toast.makeText(requireContext(),
+                            "Check failed: " + (result.errorMessage != null ? result.errorMessage : "unknown"),
+                            Toast.LENGTH_LONG).show();
+                    break;
+            }
+        });
     }
 
     @Override

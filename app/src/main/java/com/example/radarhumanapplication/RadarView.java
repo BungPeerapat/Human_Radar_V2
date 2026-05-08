@@ -159,8 +159,20 @@ public class RadarView extends View {
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
         int width = MeasureSpec.getSize(widthMeasureSpec);
-        // Square aspect ratio
-        setMeasuredDimension(width, width);
+        int height = MeasureSpec.getSize(heightMeasureSpec);
+        int heightMode = MeasureSpec.getMode(heightMeasureSpec);
+        // Fan radar: visible area is a half-circle (height ≈ width / 2).
+        // Honor the bounded height when the parent constrains it (landscape side-by-side),
+        // otherwise fall back to a square so portrait layouts keep their previous look.
+        int size;
+        if (heightMode == MeasureSpec.EXACTLY || heightMode == MeasureSpec.AT_MOST) {
+            size = Math.min(width, height > 0 ? height * 2 : width);
+        } else {
+            size = width;
+        }
+        int finalWidth = size;
+        int finalHeight = (heightMode == MeasureSpec.EXACTLY) ? height : Math.min(size, height > 0 ? height : size);
+        setMeasuredDimension(finalWidth, finalHeight > 0 ? finalHeight : finalWidth);
     }
 
     @Override
@@ -168,7 +180,10 @@ public class RadarView extends View {
         super.onSizeChanged(w, h, oldw, oldh);
         cx = w / 2f;
         cy = h - h * 0.05f; // Sensor near bottom
-        scale = (h - h * 0.1f) / MAX_RANGE;
+        // Fit the fan into both width (half-circle radius = w/2) and height
+        float maxRadiusByWidth = (w / 2f) - w * 0.02f;
+        float maxRadiusByHeight = h - h * 0.1f;
+        scale = Math.min(maxRadiusByWidth, maxRadiusByHeight) / MAX_RANGE;
     }
 
     @Override

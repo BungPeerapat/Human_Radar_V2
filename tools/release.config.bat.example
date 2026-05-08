@@ -1,0 +1,25 @@
+@echo off
+rem ============================================================================
+rem Local release configuration. Copy this file to "release.config.bat" and
+rem fill in real values. The actual config file is gitignored — do NOT commit
+rem your real keystore credentials.
+rem ============================================================================
+
+rem --- Keystore (required for signed release) ---
+set "KEYSTORE_PATH=C:\path\to\release.jks"
+set "KEYSTORE_PASSWORD=your-keystore-password"
+set "KEY_ALIAS=human-radar"
+set "KEY_PASSWORD=your-key-password"
+
+rem --- Update manifest URL the app polls ---
+rem Format: https://<owner>.github.io/<repo>/update.json
+set "UPDATE_MANIFEST_URL=https://OWNER.github.io/REPO/update.json"
+
+rem --- GitHub repo for release uploads (used by gh CLI) ---
+rem Format: owner/repo
+set "GH_REPO=OWNER/REPO"
+
+rem --- Optional: skip steps for faster iteration ---
+rem set "SKIP_TAG=1"          rem don't create / push git tag
+rem set "SKIP_GH_RELEASE=1"   rem don't create GitHub Release
+rem set "SKIP_GH_PAGES=1"     rem don't push update.json to gh-pages branch

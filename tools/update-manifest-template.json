@@ -1,0 +1,11 @@
+{
+  "versionCode": 1,
+  "versionName": "1.0.0",
+  "minSdkVersion": 26,
+  "apkUrl": "https://github.com/<owner>/<repo>/releases/download/v1.0.0/human-radar-v1.0.0.apk",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "sizeBytes": 0,
+  "mandatory": false,
+  "releaseNotes": "Initial release.",
+  "publishedAt": "2026-05-09T00:00:00Z"
+}

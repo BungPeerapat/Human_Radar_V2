@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/radar_bg">
+
+    <!-- Status bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="6dp"
+        android:background="@color/radar_card">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="HUMAN RADAR - LD2450"
+            android:textColor="@color/radar_green"
+            android:textSize="13sp"
+            android:fontFamily="monospace"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_radar_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DISCONNECTED"
+            android:textColor="@color/radar_red"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:background="@color/radar_input_bg"
+            android:paddingHorizontal="10dp"
+            android:paddingVertical="2dp" />
+    </LinearLayout>
+
+    <!-- Main content: radar canvas (left) + target info (right) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal">
+
+        <com.example.radarhumanapplication.RadarView
+            android:id="@+id/radar_view"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="2"
+            android:orientation="vertical"
+            android:background="@color/radar_card"
+            android:padding="10dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Live Targets"
+                android:textColor="@color/radar_blue"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:id="@+id/tv_radar_t1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="T1  ---"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:paddingVertical="4dp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/radar_input_bg" />
+
+            <TextView
+                android:id="@+id/tv_radar_t2"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="T2  ---"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:paddingVertical="4dp" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="@color/radar_input_bg" />
+
+            <TextView
+                android:id="@+id/tv_radar_t3"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="T3  ---"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:paddingVertical="4dp" />
+
+            <Space
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1" />
+
+            <TextView
+                android:id="@+id/tv_radar_stats"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Frames: 0 | Errors: 0 | FPS: 0"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:gravity="center"
+                android:paddingTop="6dp" />
+        </LinearLayout>
+    </LinearLayout>
+
+</LinearLayout>
