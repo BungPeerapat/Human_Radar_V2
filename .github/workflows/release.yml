@@ -62,6 +62,20 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Verify keystore credentials
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "Keystore file: $KEYSTORE_PATH"
+          ls -la "$KEYSTORE_PATH" || true
+          echo "Keystore password length: ${#KEYSTORE_PASSWORD}"
+          echo "Key alias: $KEY_ALIAS"
+          echo "Key password length: ${#KEY_PASSWORD}"
+          echo "--- keytool list ---"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" 2>&1 || echo "::warning::keytool failed - check KEYSTORE_PASSWORD or KEY_ALIAS"
+
       - name: Assemble release APK
         env:
           APP_VERSION_NAME: ${{ steps.version.outputs.version_name }}
@@ -70,7 +84,15 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew :app:assembleRelease --no-daemon
+        run: ./gradlew :app:assembleRelease --no-daemon --stacktrace --info 2>&1 | tee build.log
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
 
       - name: Locate signed APK
         id: apk
