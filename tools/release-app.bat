@@ -152,33 +152,40 @@ set "NEW_VERSION="
 set /p NEW_VERSION="  New version: v"
 if not defined NEW_VERSION set "NEW_VERSION=!SUGGESTED!"
 
+rem Trim trailing whitespace
+for /f "tokens=* delims= " %%a in ("!NEW_VERSION!") do set "NEW_VERSION=%%a"
+
 rem Strip leading 'v' if user typed it
 if /I "!NEW_VERSION:~0,1!"=="v" set "NEW_VERSION=!NEW_VERSION:~1!"
 
-rem Validate X.Y.Z
-echo !NEW_VERSION!| findstr /R "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
-if errorlevel 1 (
-    echo [ERROR] Invalid format. Must be X.Y.Z (digits only)
-    goto :fail
-)
+rem Light sanity check - must contain at least one dot (git tag will do real validation)
+echo !NEW_VERSION! | find "." >nul
+if errorlevel 1 goto :err_invalid_version
 
 rem Check tag doesn't already exist locally
 git rev-parse "v!NEW_VERSION!" >nul 2>&1
-if not errorlevel 1 (
-    echo [ERROR] Tag v!NEW_VERSION! already exists locally
-    goto :fail
-)
+if errorlevel 1 goto :tag_local_ok
+echo [ERROR] Tag v!NEW_VERSION! already exists locally
+goto :fail
 
+:tag_local_ok
 rem Check tag doesn't exist on remote
 git ls-remote --tags origin "refs/tags/v!NEW_VERSION!" 2>nul | findstr /C:"v!NEW_VERSION!" >nul
-if not errorlevel 1 (
-    echo [ERROR] Tag v!NEW_VERSION! already exists on remote
-    goto :fail
-)
+if errorlevel 1 goto :tag_remote_ok
+echo [ERROR] Tag v!NEW_VERSION! already exists on remote
+goto :fail
 
+:tag_remote_ok
 echo.
-echo  -^> Will release as: v!NEW_VERSION!
+echo   ^=^> Will release as: v!NEW_VERSION!
 echo.
+goto :step3
+
+:err_invalid_version
+echo [ERROR] Invalid format. Must be X.Y.Z (digits only, e.g. 1.0.0)
+goto :fail
+
+:step3
 
 rem ============================================================
 rem Step 3: Release notes via Notepad
@@ -211,32 +218,28 @@ if exist "!NOTES_CLEAN!" del "!NOTES_CLEAN!"
 
 start /wait notepad "!NOTES_FILE!"
 
-rem Strip comment lines into clean file
-type nul > "!NOTES_CLEAN!"
-for /f "usebackq tokens=* delims=" %%l in ("!NOTES_FILE!") do (
-    set "line=%%l"
-    if defined line (
-        if not "!line:~0,1!"=="#" (
-            echo(!line!>>"!NOTES_CLEAN!"
-        )
-    ) else (
-        echo(>>"!NOTES_CLEAN!"
-    )
-)
+rem Strip comment lines (anything starting with #) into the clean file
+findstr /V /R "^#" "!NOTES_FILE!" > "!NOTES_CLEAN!"
 
-rem Check notes have meaningful content
+rem Check notes have any non-trivial content (not just whitespace and dashes)
 set "HAS_CONTENT="
-for /f "usebackq tokens=* delims=" %%l in ("!NOTES_CLEAN!") do (
-    set "trim=%%l"
-    set "trim=!trim: =!"
-    set "trim=!trim:-=!"
-    if defined trim set "HAS_CONTENT=1"
-)
+for /f "usebackq tokens=* delims=" %%l in ("!NOTES_CLEAN!") do call :check_content "%%l"
+if not defined HAS_CONTENT goto :err_empty_notes
+goto :show_summary
 
-if not defined HAS_CONTENT (
-    echo [ERROR] Release notes are empty.
-    goto :fail
-)
+:check_content
+set "trim=%~1"
+set "trim=!trim: =!"
+set "trim=!trim:-=!"
+set "trim=!trim:	=!"
+if defined trim set "HAS_CONTENT=1"
+goto :eof
+
+:err_empty_notes
+echo [ERROR] Release notes are empty.
+goto :fail
+
+:show_summary
 
 rem ============================================================
 rem Step 4: Confirm summary
@@ -273,18 +276,23 @@ rem ============================================================
 echo.
 echo Creating annotated tag v!NEW_VERSION!...
 git tag -a "v!NEW_VERSION!" -F "!NOTES_CLEAN!"
-if errorlevel 1 (
-    echo [ERROR] Failed to create tag
-    goto :fail
-)
+if errorlevel 1 goto :err_tag_create
 
 echo Pushing tag to origin...
 git push origin "v!NEW_VERSION!"
-if errorlevel 1 (
-    echo [ERROR] Failed to push tag. Cleaning up local tag.
-    git tag -d "v!NEW_VERSION!" >nul 2>&1
-    goto :fail
-)
+if errorlevel 1 goto :err_tag_push
+goto :upload_ok
+
+:err_tag_create
+echo [ERROR] Failed to create tag
+goto :fail
+
+:err_tag_push
+echo [ERROR] Failed to push tag. Cleaning up local tag.
+git tag -d "v!NEW_VERSION!" >nul 2>&1
+goto :fail
+
+:upload_ok
 
 rem Cleanup temp files
 del "!NOTES_FILE!" 2>nul
