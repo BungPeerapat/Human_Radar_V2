@@ -68,13 +68,42 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          echo "Keystore file: $KEYSTORE_PATH"
-          ls -la "$KEYSTORE_PATH" || true
-          echo "Keystore password length: ${#KEYSTORE_PASSWORD}"
-          echo "Key alias: $KEY_ALIAS"
-          echo "Key password length: ${#KEY_PASSWORD}"
-          echo "--- keytool list ---"
-          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" 2>&1 || echo "::warning::keytool failed - check KEYSTORE_PASSWORD or KEY_ALIAS"
+          {
+            echo "## Keystore diagnostics"
+            echo ""
+            echo "- File: \`$KEYSTORE_PATH\` ($(stat -c %s "$KEYSTORE_PATH" 2>/dev/null || echo '?') bytes)"
+            echo "- KEYSTORE_PASSWORD length: ${#KEYSTORE_PASSWORD}"
+            echo "- KEY_ALIAS: \`$KEY_ALIAS\`"
+            echo "- KEY_PASSWORD length: ${#KEY_PASSWORD}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "--- keytool list (all aliases) ---"
+          ALL_ALIASES=$(keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" 2>&1) || ALL_ALIASES="$ALL_ALIASES (FAILED)"
+          echo "$ALL_ALIASES"
+          {
+            echo ""
+            echo "### Aliases in keystore"
+            echo '```'
+            echo "$ALL_ALIASES" | head -40
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "--- keytool list with alias '$KEY_ALIAS' ---"
+          ALIAS_OUT=$(keytool -list -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" -alias "$KEY_ALIAS" 2>&1) || ALIAS_OUT="$ALIAS_OUT (FAILED)"
+          echo "$ALIAS_OUT"
+
+          if echo "$ALIAS_OUT" | grep -qi "does not exist"; then
+            echo "::error::KEY_ALIAS '$KEY_ALIAS' does not exist in keystore. Use one of the aliases listed above."
+            exit 1
+          fi
+          if echo "$ALIAS_OUT" | grep -qi "password was incorrect"; then
+            echo "::error::KEYSTORE_PASSWORD is wrong. Re-enter the secret."
+            exit 1
+          fi
+          if echo "$ALIAS_OUT" | grep -qi "tampered with"; then
+            echo "::error::Keystore file invalid or KEYSTORE_PASSWORD wrong."
+            exit 1
+          fi
 
       - name: Assemble release APK
         env:
