@@ -18,6 +18,8 @@ public class RadarFragment extends Fragment
     private RadarView radarView;
     private TextView tvTarget1, tvTarget2, tvTarget3;
     private TextView tvStats, tvRadarStatus;
+    private View statusBar, infoPanel;
+    private boolean isFullscreen = false;
     private MqttService mqtt;
 
     private static final int[] TARGET_COLORS = {
@@ -42,6 +44,8 @@ public class RadarFragment extends Fragment
         tvTarget3 = v.findViewById(R.id.tv_radar_t3);
         tvStats = v.findViewById(R.id.tv_radar_stats);
         tvRadarStatus = v.findViewById(R.id.tv_radar_status);
+        statusBar = v.findViewById(R.id.radar_status_bar);
+        infoPanel = v.findViewById(R.id.radar_info_panel);
 
         radarView.setInfoListener((targets, frameCount, errorCount, fps) -> {
             if (!isAdded()) return;
@@ -50,13 +54,49 @@ public class RadarFragment extends Fragment
                     frameCount, errorCount, fps));
         });
 
+        // Tap radar to toggle fullscreen
+        radarView.setOnClickListener(view -> toggleFullscreen());
+
         updateConnectionStatus();
         mqtt.addTargetListener(this);
         mqtt.addConnectionListener(this);
     }
 
+    private void toggleFullscreen() {
+        isFullscreen = !isFullscreen;
+        applyFullscreen();
+    }
+
+    private void applyFullscreen() {
+        int hidden = isFullscreen ? View.GONE : View.VISIBLE;
+        if (statusBar != null) statusBar.setVisibility(hidden);
+        if (infoPanel != null) infoPanel.setVisibility(hidden);
+        // tv_radar_stats lives outside infoPanel only in portrait — hide it directly too
+        if (tvStats != null && tvStats.getParent() != infoPanel) {
+            tvStats.setVisibility(hidden);
+        }
+        if (getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).setBottomNavVisible(!isFullscreen);
+        }
+    }
+
+    @Override
+    public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        // Restore bottom nav visibility when user navigates away from this fragment
+        if (hidden && isFullscreen && getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).setBottomNavVisible(true);
+        } else if (!hidden && isFullscreen && getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).setBottomNavVisible(false);
+        }
+    }
+
     @Override
     public void onDestroyView() {
+        // Make sure bottom nav is restored if fragment is destroyed while fullscreen
+        if (isFullscreen && getActivity() instanceof MainActivity) {
+            ((MainActivity) getActivity()).setBottomNavVisible(true);
+        }
         mqtt.removeTargetListener(this);
         mqtt.removeConnectionListener(this);
         super.onDestroyView();

@@ -7,6 +7,7 @@
 
     <!-- Status bar -->
     <LinearLayout
+        android:id="@+id/radar_status_bar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
@@ -46,6 +47,7 @@
 
     <!-- Target Info Panel -->
     <LinearLayout
+        android:id="@+id/radar_info_panel"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"

@@ -130,6 +130,13 @@ public class MainActivity extends AppCompatActivity {
         return R.id.nav_radar;
     }
 
+    public void setBottomNavVisible(boolean visible) {
+        BottomNavigationView nav = findViewById(R.id.bottom_nav);
+        if (nav != null) {
+            nav.setVisibility(visible ? android.view.View.VISIBLE : android.view.View.GONE);
+        }
+    }
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
