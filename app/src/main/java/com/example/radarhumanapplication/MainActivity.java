@@ -16,6 +16,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.fragment.app.Fragment;
 
+import com.example.radarhumanapplication.alerts.AlertManager;
 import com.example.radarhumanapplication.update.UpdateDialog;
 import com.example.radarhumanapplication.update.UpdateManager;
 
@@ -25,12 +26,14 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG_RADAR = "radar";
     private static final String TAG_DASHBOARD = "dashboard";
+    private static final String TAG_ALERTS = "alerts";
     private static final String TAG_CONFIG = "config";
     private static final String TAG_LOGS = "logs";
     private static final String STATE_ACTIVE_TAG = "active_tag";
 
     private RadarFragment radarFragment;
     private DashboardFragment dashboardFragment;
+    private AlertsFragment alertsFragment;
     private ConfigFragment configFragment;
     private LogsFragment logsFragment;
     private Fragment activeFragment;
@@ -46,6 +49,10 @@ public class MainActivity extends AppCompatActivity {
 
         // Bind app context to MqttService so it can spin up the foreground service.
         MqttService.getInstance().attachContext(getApplicationContext());
+
+        // AlertManager subscribes itself to MqttService.TargetListener — attach early so rules
+        // fire even when the user is not on the Alerts tab.
+        AlertManager.getInstance().attach(getApplicationContext());
 
         // Android 13+ requires runtime POST_NOTIFICATIONS permission for the foreground service notification.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -65,11 +72,13 @@ public class MainActivity extends AppCompatActivity {
         if (savedInstanceState == null) {
             radarFragment = new RadarFragment();
             dashboardFragment = new DashboardFragment();
+            alertsFragment = new AlertsFragment();
             configFragment = new ConfigFragment();
             logsFragment = new LogsFragment();
             getSupportFragmentManager().beginTransaction()
                     .add(R.id.fragment_container, logsFragment, TAG_LOGS).hide(logsFragment)
                     .add(R.id.fragment_container, configFragment, TAG_CONFIG).hide(configFragment)
+                    .add(R.id.fragment_container, alertsFragment, TAG_ALERTS).hide(alertsFragment)
                     .add(R.id.fragment_container, dashboardFragment, TAG_DASHBOARD).hide(dashboardFragment)
                     .add(R.id.fragment_container, radarFragment, TAG_RADAR)
                     .commit();
@@ -77,6 +86,7 @@ public class MainActivity extends AppCompatActivity {
         } else {
             radarFragment = (RadarFragment) getSupportFragmentManager().findFragmentByTag(TAG_RADAR);
             dashboardFragment = (DashboardFragment) getSupportFragmentManager().findFragmentByTag(TAG_DASHBOARD);
+            alertsFragment = (AlertsFragment) getSupportFragmentManager().findFragmentByTag(TAG_ALERTS);
             configFragment = (ConfigFragment) getSupportFragmentManager().findFragmentByTag(TAG_CONFIG);
             logsFragment = (LogsFragment) getSupportFragmentManager().findFragmentByTag(TAG_LOGS);
             String activeTag = savedInstanceState.getString(STATE_ACTIVE_TAG, TAG_RADAR);
@@ -91,6 +101,8 @@ public class MainActivity extends AppCompatActivity {
                 target = radarFragment;
             } else if (id == R.id.nav_dashboard) {
                 target = dashboardFragment;
+            } else if (id == R.id.nav_alerts) {
+                target = alertsFragment;
             } else if (id == R.id.nav_config) {
                 target = configFragment;
             } else if (id == R.id.nav_logs) {
@@ -131,6 +143,7 @@ public class MainActivity extends AppCompatActivity {
 
     private Fragment fragmentForTag(String tag) {
         if (TAG_DASHBOARD.equals(tag)) return dashboardFragment;
+        if (TAG_ALERTS.equals(tag)) return alertsFragment;
         if (TAG_CONFIG.equals(tag)) return configFragment;
         if (TAG_LOGS.equals(tag)) return logsFragment;
         return radarFragment;
@@ -138,6 +151,7 @@ public class MainActivity extends AppCompatActivity {
 
     private String tagForFragment(Fragment f) {
         if (f == dashboardFragment) return TAG_DASHBOARD;
+        if (f == alertsFragment) return TAG_ALERTS;
         if (f == configFragment) return TAG_CONFIG;
         if (f == logsFragment) return TAG_LOGS;
         return TAG_RADAR;
@@ -145,6 +159,7 @@ public class MainActivity extends AppCompatActivity {
 
     private int menuIdForFragment(Fragment f) {
         if (f == dashboardFragment) return R.id.nav_dashboard;
+        if (f == alertsFragment) return R.id.nav_alerts;
         if (f == configFragment) return R.id.nav_config;
         if (f == logsFragment) return R.id.nav_logs;
         return R.id.nav_radar;

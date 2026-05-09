@@ -10,10 +10,12 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
+import com.example.radarhumanapplication.alerts.AlertManager;
 import com.google.gson.JsonObject;
 
 public class RadarFragment extends Fragment
-        implements MqttService.TargetListener, MqttService.ConnectionListener {
+        implements MqttService.TargetListener, MqttService.ConnectionListener,
+                   AlertManager.RulesChangedListener {
 
     private RadarView radarView;
     private TextView tvTarget1, tvTarget2, tvTarget3;
@@ -58,8 +60,22 @@ public class RadarFragment extends Fragment
         radarView.setOnClickListener(view -> toggleFullscreen());
 
         updateConnectionStatus();
+        applyAlertDistances();
         mqtt.addTargetListener(this);
         mqtt.addConnectionListener(this);
+        AlertManager.getInstance().addRulesChangedListener(this);
+    }
+
+    @Override
+    public void onRulesChanged() {
+        if (!isAdded()) return;
+        applyAlertDistances();
+    }
+
+    private void applyAlertDistances() {
+        if (radarView != null) {
+            radarView.setAlertDistancesMm(AlertManager.getInstance().getEnabledDistancesMm());
+        }
     }
 
     private void toggleFullscreen() {
@@ -99,6 +115,7 @@ public class RadarFragment extends Fragment
         }
         mqtt.removeTargetListener(this);
         mqtt.removeConnectionListener(this);
+        AlertManager.getInstance().removeRulesChangedListener(this);
         super.onDestroyView();
     }
 

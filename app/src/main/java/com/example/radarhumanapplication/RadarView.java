@@ -35,7 +35,10 @@ public class RadarView extends View {
     private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint glowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint alertArcPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint alertLabelPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path arrowPath = new Path();
+    private List<Integer> alertDistancesMm = new ArrayList<>();
 
     private float cx, cy, scale;
 
@@ -116,6 +119,16 @@ public class RadarView extends View {
         textPaint.setTextAlign(Paint.Align.CENTER);
         textPaint.setFakeBoldText(true);
 
+        alertArcPaint.setColor(Color.parseColor("#FFCC00"));
+        alertArcPaint.setStyle(Paint.Style.STROKE);
+        alertArcPaint.setStrokeWidth(2.5f);
+        alertArcPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{12f, 8f}, 0f));
+
+        alertLabelPaint.setColor(Color.parseColor("#FFCC00"));
+        alertLabelPaint.setTextSize(22f);
+        alertLabelPaint.setTextAlign(Paint.Align.CENTER);
+        alertLabelPaint.setFakeBoldText(true);
+
         arrowPaint.setStyle(Paint.Style.FILL_AND_STROKE);
         arrowPaint.setStrokeWidth(4f);
 
@@ -193,6 +206,11 @@ public class RadarView extends View {
         drawTargets(canvas);
     }
 
+    public void setAlertDistancesMm(List<Integer> distances) {
+        this.alertDistancesMm = distances == null ? new ArrayList<>() : distances;
+        invalidate();
+    }
+
     private void drawBackground(Canvas canvas) {
         // Fill background
         canvas.drawRect(0, 0, getWidth(), getHeight(), bgPaint);
@@ -205,6 +223,17 @@ public class RadarView extends View {
 
             // Range label
             canvas.drawText(r / 1000 + "m", cx + pr - 40, cy - 8, labelPaint);
+        }
+
+        // Alert distance arcs (yellow dashed) — drawn after the regular rings so they sit on top
+        for (Integer d : alertDistancesMm) {
+            if (d == null || d <= 0 || d > MAX_RANGE) continue;
+            float pr = d * scale;
+            RectF oval = new RectF(cx - pr, cy - pr, cx + pr, cy + pr);
+            canvas.drawArc(oval, 180, 180, false, alertArcPaint);
+            String label = (d % 1000 == 0) ? (d / 1000) + "m"
+                                           : String.format(java.util.Locale.US, "%.1fm", d / 1000.0);
+            canvas.drawText("⚠ " + label, cx, cy - pr - 6, alertLabelPaint);
         }
 
         // Angle lines: -60, -30, 0, +30, +60
