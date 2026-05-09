@@ -1,6 +1,7 @@
 package com.example.radarhumanapplication;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -19,11 +20,19 @@ public class RadarView extends View {
 
     private static final float MAX_RANGE = 6000f; // mm
     private static final int TRAIL_MAX = 20;
-    private static final int[] TARGET_COLORS = {
+    private static final int[] TARGET_COLORS_NORMAL = {
             Color.parseColor("#FF4444"),
             Color.parseColor("#44FF44"),
             Color.parseColor("#4488FF")
     };
+    // Night-mode (red theme) target tints — preserves dark adaptation.
+    private static final int[] TARGET_COLORS_NIGHT = {
+            Color.parseColor("#FF6666"),
+            Color.parseColor("#FF3333"),
+            Color.parseColor("#CC2222")
+    };
+
+    private boolean nightMode = false;
 
     private final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint ringPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -92,39 +101,24 @@ public class RadarView extends View {
             trails[i] = new ArrayList<>();
         }
 
-        bgPaint.setColor(Color.parseColor("#0A0A1A"));
         bgPaint.setStyle(Paint.Style.FILL);
-
-        ringPaint.setColor(Color.parseColor("#1A2A1A"));
         ringPaint.setStyle(Paint.Style.STROKE);
         ringPaint.setStrokeWidth(1.5f);
-
-        anglePaint.setColor(Color.parseColor("#152015"));
         anglePaint.setStyle(Paint.Style.STROKE);
         anglePaint.setStrokeWidth(1f);
-
-        labelPaint.setColor(Color.parseColor("#334433"));
         labelPaint.setTextSize(28f);
         labelPaint.setTextAlign(Paint.Align.CENTER);
-
-        sensorPaint.setColor(Color.parseColor("#00FF88"));
         sensorPaint.setStyle(Paint.Style.FILL);
-
         targetPaint.setStyle(Paint.Style.FILL);
-
         trailPaint.setStyle(Paint.Style.FILL);
-
-        textPaint.setColor(Color.WHITE);
         textPaint.setTextSize(28f);
         textPaint.setTextAlign(Paint.Align.CENTER);
         textPaint.setFakeBoldText(true);
 
-        alertArcPaint.setColor(Color.parseColor("#FFCC00"));
         alertArcPaint.setStyle(Paint.Style.STROKE);
         alertArcPaint.setStrokeWidth(2.5f);
         alertArcPaint.setPathEffect(new android.graphics.DashPathEffect(new float[]{12f, 8f}, 0f));
 
-        alertLabelPaint.setColor(Color.parseColor("#FFCC00"));
         alertLabelPaint.setTextSize(22f);
         alertLabelPaint.setTextAlign(Paint.Align.CENTER);
         alertLabelPaint.setFakeBoldText(true);
@@ -133,6 +127,59 @@ public class RadarView extends View {
         arrowPaint.setStrokeWidth(4f);
 
         glowPaint.setStyle(Paint.Style.FILL);
+
+        applyThemeColors();
+    }
+
+    /** Update paint colors based on the current theme (normal vs night mode). */
+    private void applyThemeColors() {
+        if (nightMode) {
+            bgPaint.setColor(Color.parseColor("#0A0000"));
+            ringPaint.setColor(Color.parseColor("#3A0000"));
+            anglePaint.setColor(Color.parseColor("#220000"));
+            labelPaint.setColor(Color.parseColor("#883333"));
+            sensorPaint.setColor(Color.parseColor("#FF3333"));
+            textPaint.setColor(Color.parseColor("#FF8888"));
+            alertArcPaint.setColor(Color.parseColor("#FF8800"));
+            alertLabelPaint.setColor(Color.parseColor("#FF8800"));
+        } else {
+            bgPaint.setColor(Color.parseColor("#0A0A1A"));
+            ringPaint.setColor(Color.parseColor("#1A2A1A"));
+            anglePaint.setColor(Color.parseColor("#152015"));
+            labelPaint.setColor(Color.parseColor("#334433"));
+            sensorPaint.setColor(Color.parseColor("#00FF88"));
+            textPaint.setColor(Color.WHITE);
+            alertArcPaint.setColor(Color.parseColor("#FFCC00"));
+            alertLabelPaint.setColor(Color.parseColor("#FFCC00"));
+        }
+    }
+
+    public void setNightMode(boolean enabled) {
+        if (this.nightMode == enabled) return;
+        this.nightMode = enabled;
+        applyThemeColors();
+        invalidate();
+    }
+
+    public boolean isNightMode() {
+        return nightMode;
+    }
+
+    private int[] currentTargetColors() {
+        return nightMode ? TARGET_COLORS_NIGHT : TARGET_COLORS_NORMAL;
+    }
+
+    /**
+     * Render the current radar state into a Bitmap for snapshot/export. Caller owns
+     * the returned bitmap and must recycle it when finished.
+     */
+    public Bitmap captureSnapshot() {
+        int w = Math.max(1, getWidth());
+        int h = Math.max(1, getHeight());
+        Bitmap bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        draw(c);
+        return bmp;
     }
 
     public void updateTargets(JsonObject data) {
@@ -253,12 +300,14 @@ public class RadarView extends View {
         // Sensor dot
         canvas.drawCircle(cx, cy, 10, sensorPaint);
         Paint sensorLabel = new Paint(labelPaint);
-        sensorLabel.setColor(Color.parseColor("#00AA55"));
+        sensorLabel.setColor(nightMode ? Color.parseColor("#AA2222")
+                                       : Color.parseColor("#00AA55"));
         sensorLabel.setTextSize(24f);
         canvas.drawText("SENSOR", cx, cy + 36, sensorLabel);
     }
 
     private void drawTargets(Canvas canvas) {
+        int[] palette = currentTargetColors();
         for (int i = 0; i < 3; i++) {
             TargetData t = targets[i];
             if (!t.present) {
@@ -274,7 +323,7 @@ public class RadarView extends View {
             px = Math.max(20, Math.min(getWidth() - 20, px));
             py = Math.max(20, Math.min(getHeight() - 20, py));
 
-            int color = TARGET_COLORS[i];
+            int color = palette[i];
 
             // Update trail
             trails[i].add(new float[]{px, py});
