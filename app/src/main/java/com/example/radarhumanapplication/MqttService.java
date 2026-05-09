@@ -1,5 +1,6 @@
 package com.example.radarhumanapplication;
 
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -46,6 +47,7 @@ public class MqttService {
     private String username = "";
     private String password = "";
     private boolean connected = false;
+    private Context appContext;
 
     // Listeners
     public interface ConnectionListener {
@@ -120,6 +122,14 @@ public class MqttService {
         this.password = pass;
     }
 
+    /** Bind a long-lived Context (typically the Application) so MQTT can start the foreground
+     *  service that keeps it alive in background. Safe to call repeatedly. */
+    public void attachContext(Context ctx) {
+        if (this.appContext == null && ctx != null) {
+            this.appContext = ctx.getApplicationContext();
+        }
+    }
+
     public void connect() {
         if (brokerHost.isEmpty()) {
             Log.w(TAG, "No broker configured");
@@ -127,6 +137,15 @@ public class MqttService {
         }
 
         disconnect();
+
+        // Start foreground service so MQTT stays alive when app goes to background / screen off.
+        if (appContext != null) {
+            try {
+                MqttForegroundService.start(appContext);
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to start foreground service", e);
+            }
+        }
 
         try {
             var builder = MqttClient.builder()
@@ -192,6 +211,11 @@ public class MqttService {
             client = null;
         }
         connected = false;
+        if (appContext != null) {
+            try {
+                MqttForegroundService.stop(appContext);
+            } catch (Exception ignored) {}
+        }
     }
 
     private String topic(String suffix) {
