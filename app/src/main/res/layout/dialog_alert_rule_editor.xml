@@ -125,13 +125,23 @@
                 android:text="Pick…"
                 android:textSize="12sp"
                 android:layout_marginStart="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_test_sound"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▶ Test"
+                android:textSize="12sp"
+                android:layout_marginStart="6dp" />
         </LinearLayout>
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:gravity="center_vertical">
+            android:gravity="center_vertical"
+            android:layout_marginBottom="10dp">
 
             <com.google.android.material.materialswitch.MaterialSwitch
                 android:id="@+id/sw_loop"
@@ -147,5 +157,86 @@
                 android:textColor="@color/radar_text"
                 android:textSize="13sp" />
         </LinearLayout>
+
+        <!-- ===== Vibration ===== -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="6dp">
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/sw_vibrate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="false"
+                android:layout_marginEnd="10dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Vibrate on trigger"
+                android:textColor="@color/radar_text"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <Spinner
+            android:id="@+id/sp_vibration_pattern"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="14dp" />
+
+        <!-- ===== Voice (TTS) ===== -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="6dp">
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/sw_speak"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:checked="false"
+                android:layout_marginEnd="10dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Speak on trigger (TTS)"
+                android:textColor="@color/radar_text"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Spoken text — placeholders: {target}, {distance}, {operator}"
+            android:layout_marginBottom="14dp"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_spoken_text"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text"
+                android:text="Target {target} at {distance} meters" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- ===== Cooldown ===== -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Cooldown (sec) — 0 = no cooldown"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense">
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_cooldown"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="number"
+                android:text="0" />
+        </com.google.android.material.textfield.TextInputLayout>
+
     </LinearLayout>
 </ScrollView>
