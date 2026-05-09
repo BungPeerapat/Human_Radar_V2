@@ -4,6 +4,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.provider.Settings;
+import android.util.Log;
 
 import androidx.core.content.FileProvider;
 
@@ -15,6 +16,8 @@ import java.io.File;
  * have not.
  */
 public final class ApkInstaller {
+
+    private static final String TAG = "ApkInstaller";
 
     private ApkInstaller() {}
 
@@ -30,14 +33,28 @@ public final class ApkInstaller {
     }
 
     public static void install(Context ctx, File apk) {
+        Log.i(TAG, "Installing APK: " + apk.getAbsolutePath() + " (" + apk.length() + " bytes)");
         Uri uri = FileProvider.getUriForFile(
                 ctx,
                 ctx.getPackageName() + ".fileprovider",
                 apk);
+        Log.i(TAG, "FileProvider URI: " + uri);
+
         Intent intent = new Intent(Intent.ACTION_VIEW)
                 .setDataAndType(uri, "application/vnd.android.package-archive")
                 .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP);
+
+        if (intent.resolveActivity(ctx.getPackageManager()) == null) {
+            Log.w(TAG, "ACTION_VIEW for APK has no handler, trying ACTION_INSTALL_PACKAGE");
+            intent.setAction(Intent.ACTION_INSTALL_PACKAGE);
+            if (intent.resolveActivity(ctx.getPackageManager()) == null) {
+                throw new IllegalStateException("No package installer found on this device");
+            }
+        }
+
         ctx.startActivity(intent);
+        Log.i(TAG, "Install intent dispatched");
     }
 }

@@ -5,6 +5,7 @@ import android.app.ProgressDialog;
 import android.content.DialogInterface;
 import android.os.Bundle;
 import android.text.format.Formatter;
+import android.util.Log;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -30,6 +31,7 @@ public class UpdateDialog extends DialogFragment {
     private UpdateInfo info;
     private ApkDownloader downloader;
     private ProgressDialog progress;
+    private File pendingApk;
 
     public static void show(FragmentManager fm, UpdateInfo info) {
         UpdateDialog d = new UpdateDialog();
@@ -74,12 +76,36 @@ public class UpdateDialog extends DialogFragment {
 
     private void startDownload() {
         if (!ApkInstaller.canInstall(requireContext())) {
-            Toast.makeText(requireContext(),
-                    "Allow install from this app, then tap Update again",
-                    Toast.LENGTH_LONG).show();
-            ApkInstaller.requestInstallPermission(requireContext());
+            showPermissionExplainer();
             return;
         }
+        beginDownload();
+    }
+
+    private void showPermissionExplainer() {
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Permission required")
+                .setMessage("To install updates, this app needs the \"Install unknown apps\" permission.\n\n"
+                        + "Steps:\n"
+                        + "1. Tap OPEN SETTINGS below\n"
+                        + "2. Toggle ON \"Allow from this source\"\n"
+                        + "3. Press BACK to return here\n"
+                        + "4. Tap UPDATE again")
+                .setPositiveButton("Open Settings", (d, w) -> {
+                    try {
+                        ApkInstaller.requestInstallPermission(requireContext());
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to open install permission settings", e);
+                        Toast.makeText(requireContext(),
+                                "Open Settings → Apps → Human Radar → Install unknown apps → Allow",
+                                Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void beginDownload() {
         progress = new ProgressDialog(requireContext());
         progress.setTitle("Downloading update");
         progress.setMessage("Starting…");
@@ -96,13 +122,18 @@ public class UpdateDialog extends DialogFragment {
             @Override
             public void onReady(File apk) {
                 if (progress != null) progress.dismiss();
-                ApkInstaller.install(requireContext(), apk);
+                pendingApk = apk;
+                attemptInstall(apk);
             }
 
             @Override
             public void onError(String message) {
                 if (progress != null) progress.dismiss();
-                Toast.makeText(requireContext(), "Update failed: " + message, Toast.LENGTH_LONG).show();
+                new AlertDialog.Builder(requireContext())
+                        .setTitle("Download failed")
+                        .setMessage(message != null ? message : "Unknown error")
+                        .setPositiveButton("OK", null)
+                        .show();
             }
 
             @Override
@@ -113,6 +144,51 @@ public class UpdateDialog extends DialogFragment {
                 }
             }
         });
+    }
+
+    private void attemptInstall(File apk) {
+        if (!ApkInstaller.canInstall(requireContext())) {
+            // Permission was revoked between download and install — re-prompt
+            showPostDownloadPermissionPrompt();
+            return;
+        }
+        try {
+            ApkInstaller.install(requireContext(), apk);
+            // Don't dismiss the dialog — user might come back if install is cancelled
+        } catch (Exception e) {
+            Log.e(TAG, "Install intent failed", e);
+            new AlertDialog.Builder(requireContext())
+                    .setTitle("Install failed")
+                    .setMessage("Could not start installer: " + e.getMessage()
+                            + "\n\nThe APK is downloaded at:\n" + apk.getAbsolutePath()
+                            + "\n\nYou can open it manually with a file manager.")
+                    .setPositiveButton("Retry", (d, w) -> attemptInstall(apk))
+                    .setNegativeButton("Close", null)
+                    .show();
+        }
+    }
+
+    private void showPostDownloadPermissionPrompt() {
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Permission needed")
+                .setMessage("Download finished. Now allow \"Install unknown apps\" to complete the update.")
+                .setPositiveButton("Open Settings", (d, w) -> {
+                    try {
+                        ApkInstaller.requestInstallPermission(requireContext());
+                    } catch (Exception ignored) {}
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        // If user came back from the install-permission settings page and the APK is already
+        // downloaded, retry the install automatically.
+        if (pendingApk != null && pendingApk.exists() && ApkInstaller.canInstall(requireContext())) {
+            attemptInstall(pendingApk);
+        }
     }
 
     @Override

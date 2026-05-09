@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <!-- DownloadManager target: getExternalFilesDir(DIRECTORY_DOWNLOADS) -->
     <external-files-path
         name="downloads"
         path="Download/" />
+    <!-- Fallback: anywhere under getExternalFilesDir(null) -->
+    <external-files-path
+        name="external_files"
+        path="." />
+    <!-- Fallback: anywhere under getCacheDir() -->
+    <cache-path
+        name="cache"
+        path="." />
 </paths>
