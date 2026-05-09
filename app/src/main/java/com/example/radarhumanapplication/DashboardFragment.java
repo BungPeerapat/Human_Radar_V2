@@ -4,20 +4,40 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.radarhumanapplication.profiles.ConnectionProfile;
+import com.example.radarhumanapplication.profiles.ProfileManager;
+import com.example.radarhumanapplication.recording.SessionRecorder;
+import com.example.radarhumanapplication.recording.SessionReplayer;
 import com.google.android.material.button.MaterialButton;
+import com.google.android.material.button.MaterialButtonToggleGroup;
 import com.google.android.material.textfield.TextInputEditText;
+import com.google.android.material.textfield.TextInputLayout;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import java.util.Locale;
 
 public class DashboardFragment extends Fragment
         implements MqttService.ConnectionListener,
@@ -30,6 +50,26 @@ public class DashboardFragment extends Fragment
     private TextView tvMqttStatus, tvDeviceStatus;
     private TextView tvTarget1, tvTarget2, tvTarget3, tvFrameInfo;
     private MaterialButton btnRestart, btnFactoryReset;
+
+    // Profiles UI
+    private Spinner spProfiles;
+    private MaterialButton btnProfileSave, btnProfileApply, btnProfileDelete;
+    private ArrayAdapter<String> profileAdapter;
+    private List<ConnectionProfile> profileList = new ArrayList<>();
+
+    // Recording UI
+    private TextView tvRecStatus;
+    private MaterialButton btnRecordStart, btnRecordStop, btnReplayOpen;
+    private final Handler recHandler = new Handler(Looper.getMainLooper());
+    private final Runnable recTick = new Runnable() {
+        @Override public void run() {
+            updateRecStatus();
+            if (SessionRecorder.getInstance().isRecording()
+                    || SessionReplayer.getInstance().isReplaying()) {
+                recHandler.postDelayed(this, 1000);
+            }
+        }
+    };
 
     private MqttService mqtt;
     private static final String PREFS = "radar_prefs";
@@ -61,8 +101,20 @@ public class DashboardFragment extends Fragment
         btnRestart = v.findViewById(R.id.btn_restart);
         btnFactoryReset = v.findViewById(R.id.btn_factory_reset);
 
+        spProfiles = v.findViewById(R.id.sp_profiles);
+        btnProfileSave = v.findViewById(R.id.btn_profile_save);
+        btnProfileApply = v.findViewById(R.id.btn_profile_apply);
+        btnProfileDelete = v.findViewById(R.id.btn_profile_delete);
+
+        tvRecStatus = v.findViewById(R.id.tv_rec_status);
+        btnRecordStart = v.findViewById(R.id.btn_record_start);
+        btnRecordStop = v.findViewById(R.id.btn_record_stop);
+        btnReplayOpen = v.findViewById(R.id.btn_replay_open);
+
         loadPrefs();
         updateConnectButton();
+        setupProfiles();
+        setupRecording();
 
         btnConnect.setOnClickListener(this::onConnectClick);
         btnRestart.setOnClickListener(x -> {
@@ -98,6 +150,7 @@ public class DashboardFragment extends Fragment
         mqtt.removeTargetListener(this);
         mqtt.removeStatusListener(this);
         mqtt.removeCmdAckListener(this);
+        recHandler.removeCallbacks(recTick);
         super.onDestroyView();
     }
 
@@ -194,6 +247,256 @@ public class DashboardFragment extends Fragment
         if (!isAdded()) return;
         String msg = ack.has("message") ? ack.get("message").getAsString() : "done";
         Toast.makeText(requireContext(), "CMD: " + msg, Toast.LENGTH_SHORT).show();
+    }
+
+    // --- Profiles ---
+
+    private void setupProfiles() {
+        ProfileManager.getInstance().attach(requireContext());
+        profileAdapter = new ArrayAdapter<>(requireContext(),
+                android.R.layout.simple_spinner_item, new ArrayList<>());
+        profileAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spProfiles.setAdapter(profileAdapter);
+        refreshProfiles();
+
+        spProfiles.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View v, int pos, long id) {
+                if (pos < 0 || pos >= profileList.size()) return;
+                ProfileManager.getInstance().setActive(profileList.get(pos).id);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+
+        btnProfileSave.setOnClickListener(x -> promptSaveProfile());
+        btnProfileApply.setOnClickListener(x -> applySelectedProfile());
+        btnProfileDelete.setOnClickListener(x -> deleteSelectedProfile());
+    }
+
+    private void refreshProfiles() {
+        profileList = new ArrayList<>(ProfileManager.getInstance().getProfiles());
+        List<String> names = new ArrayList<>();
+        for (ConnectionProfile p : profileList) {
+            names.add(p.name != null ? p.name : "(unnamed)");
+        }
+        if (names.isEmpty()) names.add("(no profiles)");
+        profileAdapter.clear();
+        profileAdapter.addAll(names);
+        profileAdapter.notifyDataSetChanged();
+
+        String activeId = ProfileManager.getInstance().getActiveId();
+        if (activeId != null) {
+            for (int i = 0; i < profileList.size(); i++) {
+                if (activeId.equals(profileList.get(i).id)) {
+                    spProfiles.setSelection(i);
+                    break;
+                }
+            }
+        }
+    }
+
+    private void promptSaveProfile() {
+        TextInputLayout til = new TextInputLayout(requireContext());
+        til.setBoxBackgroundMode(TextInputLayout.BOX_BACKGROUND_OUTLINE);
+        til.setHint("Profile name");
+        TextInputEditText et = new TextInputEditText(til.getContext());
+        et.setText("Profile " + (profileList.size() + 1));
+        til.addView(et);
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Save profile")
+                .setView(til)
+                .setPositiveButton("Save", (d, w) -> {
+                    String name = et.getText() != null ? et.getText().toString().trim() : "";
+                    if (name.isEmpty()) name = "Profile " + (profileList.size() + 1);
+                    ConnectionProfile p = ConnectionProfile.create(
+                            name,
+                            getText(etHost),
+                            parseInt(getText(etPort), 1883),
+                            getText(etDeviceName),
+                            getText(etUsername),
+                            getText(etPassword));
+                    ProfileManager.getInstance().addProfile(p);
+                    ProfileManager.getInstance().setActive(p.id);
+                    refreshProfiles();
+                    Toast.makeText(requireContext(), "Profile saved", Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void applySelectedProfile() {
+        int pos = spProfiles.getSelectedItemPosition();
+        if (pos < 0 || pos >= profileList.size()) {
+            Toast.makeText(requireContext(), "No profile selected", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ConnectionProfile p = profileList.get(pos);
+        etHost.setText(p.brokerHost != null ? p.brokerHost : "");
+        etPort.setText(String.valueOf(p.brokerPort));
+        etDeviceName.setText(p.deviceName != null ? p.deviceName : "HumanRadar");
+        etUsername.setText(p.username != null ? p.username : "");
+        etPassword.setText(p.password != null ? p.password : "");
+        ProfileManager.getInstance().setActive(p.id);
+        Toast.makeText(requireContext(), "Profile applied", Toast.LENGTH_SHORT).show();
+    }
+
+    private void deleteSelectedProfile() {
+        int pos = spProfiles.getSelectedItemPosition();
+        if (pos < 0 || pos >= profileList.size()) return;
+        ConnectionProfile p = profileList.get(pos);
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Delete profile")
+                .setMessage("Delete '" + (p.name != null ? p.name : "?") + "'?")
+                .setPositiveButton("Delete", (d, w) -> {
+                    ProfileManager.getInstance().deleteProfile(p.id);
+                    refreshProfiles();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    // --- Recording ---
+
+    private void setupRecording() {
+        btnRecordStart.setOnClickListener(x -> {
+            if (SessionRecorder.getInstance().start(requireContext())) {
+                Toast.makeText(requireContext(), "Recording started", Toast.LENGTH_SHORT).show();
+                updateRecStatus();
+                recHandler.postDelayed(recTick, 1000);
+            } else {
+                Toast.makeText(requireContext(), "Could not start recording", Toast.LENGTH_SHORT).show();
+            }
+        });
+        btnRecordStop.setOnClickListener(x -> {
+            SessionRecorder.getInstance().stop();
+            updateRecStatus();
+        });
+        btnReplayOpen.setOnClickListener(x -> openReplayDialog());
+        updateRecStatus();
+    }
+
+    private void updateRecStatus() {
+        SessionRecorder rec = SessionRecorder.getInstance();
+        SessionReplayer rep = SessionReplayer.getInstance();
+        if (rec.isRecording()) {
+            long secs = (System.currentTimeMillis() - rec.getStartedAtMs()) / 1000L;
+            String name = rec.getCurrentFile() != null ? rec.getCurrentFile().getName() : "";
+            tvRecStatus.setText(String.format(Locale.US, "Recording %ds — %s", secs, name));
+            tvRecStatus.setTextColor(getColor(R.color.radar_red));
+        } else if (rep.isReplaying()) {
+            int pct = (int) Math.round(rep.getProgress() * 100);
+            tvRecStatus.setText(String.format(Locale.US, "Replaying… %d%%", pct));
+            tvRecStatus.setTextColor(getColor(R.color.radar_yellow));
+        } else {
+            tvRecStatus.setText("Idle");
+            tvRecStatus.setTextColor(getColor(R.color.radar_text_dim));
+        }
+    }
+
+    private void openReplayDialog() {
+        // Make sure the recorder has a context to find files.
+        SessionRecorder.getInstance().listRecordings(requireContext());
+        List<File> files = SessionRecorder.getInstance().listRecordings();
+
+        View dlgView = LayoutInflater.from(requireContext())
+                .inflate(R.layout.dialog_recordings_list, null, false);
+        RecyclerView rv = dlgView.findViewById(R.id.rv_recordings);
+        TextView empty = dlgView.findViewById(R.id.tv_recordings_empty);
+        MaterialButtonToggleGroup tg = dlgView.findViewById(R.id.tg_speed);
+        tg.check(R.id.btn_speed_one);
+
+        rv.setLayoutManager(new LinearLayoutManager(requireContext()));
+
+        final double[] speedRef = new double[]{1.0};
+        tg.addOnButtonCheckedListener((g, checkedId, isChecked) -> {
+            if (!isChecked) return;
+            if (checkedId == R.id.btn_speed_half) speedRef[0] = 0.5;
+            else if (checkedId == R.id.btn_speed_two) speedRef[0] = 2.0;
+            else speedRef[0] = 1.0;
+        });
+
+        AlertDialog dialog = new AlertDialog.Builder(requireContext())
+                .setTitle("Recordings")
+                .setView(dlgView)
+                .setNegativeButton("Close", null)
+                .create();
+
+        if (files.isEmpty()) {
+            empty.setVisibility(View.VISIBLE);
+            rv.setVisibility(View.GONE);
+        } else {
+            empty.setVisibility(View.GONE);
+            rv.setVisibility(View.VISIBLE);
+            rv.setAdapter(new RecordingAdapter(files, speedRef, dialog));
+        }
+
+        dialog.show();
+    }
+
+    private class RecordingAdapter extends RecyclerView.Adapter<RecordingAdapter.VH> {
+        private final List<File> files;
+        private final double[] speedRef;
+        private final AlertDialog dialog;
+        private final SimpleDateFormat fmt = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+
+        RecordingAdapter(List<File> files, double[] speedRef, AlertDialog dialog) {
+            this.files = files;
+            this.speedRef = speedRef;
+            this.dialog = dialog;
+        }
+
+        @NonNull
+        @Override
+        public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+            View v = LayoutInflater.from(parent.getContext())
+                    .inflate(R.layout.item_recording, parent, false);
+            return new VH(v);
+        }
+
+        @Override
+        public void onBindViewHolder(@NonNull VH h, int position) {
+            File f = files.get(position);
+            h.tvName.setText(f.getName());
+            h.tvSize.setText(String.format(Locale.US, "%.1f kB — %s",
+                    f.length() / 1024.0, fmt.format(new Date(f.lastModified()))));
+            h.btnPlay.setOnClickListener(x -> {
+                boolean ok = SessionReplayer.getInstance().loadAndStart(f, speedRef[0]);
+                if (ok) {
+                    Toast.makeText(requireContext(), "Replay started", Toast.LENGTH_SHORT).show();
+                    updateRecStatus();
+                    recHandler.postDelayed(recTick, 1000);
+                    dialog.dismiss();
+                } else {
+                    Toast.makeText(requireContext(), "Could not start replay", Toast.LENGTH_SHORT).show();
+                }
+            });
+            h.btnDelete.setOnClickListener(x -> {
+                if (SessionRecorder.getInstance().delete(f)) {
+                    files.remove(position);
+                    notifyItemRemoved(position);
+                    notifyItemRangeChanged(position, files.size() - position);
+                } else {
+                    Toast.makeText(requireContext(), "Delete failed", Toast.LENGTH_SHORT).show();
+                }
+            });
+        }
+
+        @Override
+        public int getItemCount() { return files.size(); }
+
+        class VH extends RecyclerView.ViewHolder {
+            final TextView tvName;
+            final TextView tvSize;
+            final MaterialButton btnPlay;
+            final MaterialButton btnDelete;
+            VH(View v) {
+                super(v);
+                tvName = v.findViewById(R.id.tv_rec_name);
+                tvSize = v.findViewById(R.id.tv_rec_size);
+                btnPlay = v.findViewById(R.id.btn_rec_play);
+                btnDelete = v.findViewById(R.id.btn_rec_delete);
+            }
+        }
     }
 
     // --- Helpers ---

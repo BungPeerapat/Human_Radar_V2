@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingVertical="6dp"
+    android:paddingHorizontal="8dp">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tv_rec_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="13sp"
+            android:textColor="@color/radar_text"
+            android:fontFamily="monospace" />
+
+        <TextView
+            android:id="@+id/tv_rec_size"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="10sp"
+            android:textColor="@color/radar_text_dim"
+            android:fontFamily="monospace" />
+    </LinearLayout>
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_rec_play"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Play"
+        android:textSize="11sp"
+        style="@style/Widget.Material3.Button.TonalButton" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/btn_rec_delete"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:text="Delete"
+        android:textSize="11sp"
+        style="@style/Widget.Material3.Button.TonalButton" />
+
+</LinearLayout>

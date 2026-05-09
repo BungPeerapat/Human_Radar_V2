@@ -1,10 +1,39 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@color/radar_bg"
     android:padding="16dp">
+
+    <!-- Tab toggle: ESP32 Logs vs Detection Events -->
+    <com.google.android.material.button.MaterialButtonToggleGroup
+        android:id="@+id/tg_log_mode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:singleSelection="true"
+        app:selectionRequired="true"
+        android:layout_marginBottom="8dp">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_tab_esp_logs"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="ESP32 Logs"
+            android:textSize="12sp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_tab_events"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Detection Events"
+            android:textSize="12sp"
+            style="@style/Widget.Material3.Button.OutlinedButton" />
+    </com.google.android.material.button.MaterialButtonToggleGroup>
 
     <!-- Controls -->
     <LinearLayout
@@ -83,5 +112,16 @@
         android:background="@color/radar_card"
         android:padding="8dp"
         android:clipToPadding="false" />
+
+    <!-- Detection event list (hidden by default) -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_events"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/radar_card"
+        android:padding="8dp"
+        android:clipToPadding="false"
+        android:visibility="gone" />
 
 </LinearLayout>
