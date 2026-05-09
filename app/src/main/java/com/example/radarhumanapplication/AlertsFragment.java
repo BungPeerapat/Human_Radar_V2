@@ -5,10 +5,11 @@ import android.content.Intent;
 import android.media.RingtoneManager;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Spinner;
 import android.widget.TextView;
@@ -25,11 +26,17 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.example.radarhumanapplication.alerts.AlertManager;
 import com.example.radarhumanapplication.alerts.AlertOperator;
 import com.example.radarhumanapplication.alerts.AlertRule;
+import com.example.radarhumanapplication.alerts.AlertSoundPlayer;
+import com.example.radarhumanapplication.alerts.AlertTtsPlayer;
+import com.example.radarhumanapplication.alerts.AlertVibrator;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.materialswitch.MaterialSwitch;
 import com.google.android.material.textfield.TextInputEditText;
 
 public class AlertsFragment extends Fragment implements AlertManager.RulesChangedListener {
+
+    /** How long the editor's "▶ Test" preview plays before being stopped, in ms. */
+    private static final int TEST_PREVIEW_MS = 2000;
 
     private AlertRuleAdapter adapter;
     private TextView tvCount;
@@ -39,6 +46,12 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
     /** Holds the rule we're editing while waiting for the ringtone picker result. */
     private AlertRule pendingRule;
     private TextView pendingSoundLabel;
+
+    /** Lazily allocated test-preview helpers (created when first ▶ Test pressed). */
+    private AlertSoundPlayer testSoundPlayer;
+    private AlertTtsPlayer testTts;
+    private AlertVibrator testVibrator;
+    private final Handler testHandler = new Handler(Looper.getMainLooper());
 
     private final ActivityResultLauncher<Intent> ringtonePicker =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
@@ -107,6 +120,11 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
     @Override
     public void onDestroyView() {
         AlertManager.getInstance().removeRulesChangedListener(this);
+        stopTestPreview();
+        if (testTts != null) {
+            try { testTts.releaseAll(); } catch (Exception ignored) {}
+            testTts = null;
+        }
         super.onDestroyView();
     }
 
@@ -140,6 +158,11 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
         Spinner spStream = root.findViewById(R.id.sp_stream);
         TextView tvSound = root.findViewById(R.id.tv_selected_sound);
         MaterialSwitch swLoop = root.findViewById(R.id.sw_loop);
+        MaterialSwitch swVibrate = root.findViewById(R.id.sw_vibrate);
+        Spinner spVibrationPattern = root.findViewById(R.id.sp_vibration_pattern);
+        MaterialSwitch swSpeak = root.findViewById(R.id.sw_speak);
+        TextInputEditText etSpoken = root.findViewById(R.id.et_spoken_text);
+        TextInputEditText etCooldown = root.findViewById(R.id.et_cooldown);
         pendingSoundLabel = tvSound;
 
         // Operator spinner
@@ -171,13 +194,43 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
         }
         spStream.setSelection(streamIdx);
 
+        // Vibration pattern spinner
+        String[] vibPatterns = AlertRule.vibrationPatternOptions();
+        spVibrationPattern.setAdapter(new ArrayAdapter<>(requireContext(),
+                android.R.layout.simple_spinner_dropdown_item, vibPatterns));
+        spVibrationPattern.setSelection(indexOf(vibPatterns,
+                draft.vibrationPattern == null ? AlertRule.VIB_SHORT : draft.vibrationPattern));
+
         // Initial values
         etName.setText(draft.name == null ? "" : draft.name);
         etDistance.setText(formatDistance(draft.distanceMm));
         tvSound.setText(draft.soundLabel == null ? "(none)" : draft.soundLabel);
         swLoop.setChecked(draft.loop);
+        swVibrate.setChecked(draft.vibrate);
+        swSpeak.setChecked(draft.speak);
+        etSpoken.setText(draft.spokenText == null ? AlertRule.DEFAULT_SPOKEN_TEXT : draft.spokenText);
+        etCooldown.setText(String.valueOf(Math.max(0, draft.cooldownSeconds)));
 
         root.findViewById(R.id.btn_pick_sound).setOnClickListener(v -> openRingtonePicker(draft));
+        root.findViewById(R.id.btn_test_sound).setOnClickListener(v -> {
+            // Build an ephemeral rule reflecting current dialog state for the preview.
+            AlertRule preview = cloneRule(draft);
+            preview.id = "test-preview";
+            preview.audioStream = streamOpts[spStream.getSelectedItemPosition()];
+            preview.loop = false; // never loop a preview
+            preview.vibrate = swVibrate.isChecked();
+            Object selectedPattern = spVibrationPattern.getSelectedItem();
+            preview.vibrationPattern = selectedPattern == null
+                    ? AlertRule.VIB_SHORT : selectedPattern.toString();
+            preview.speak = swSpeak.isChecked();
+            preview.spokenText = etSpoken.getText() == null
+                    ? AlertRule.DEFAULT_SPOKEN_TEXT : etSpoken.getText().toString();
+            preview.operator = AlertOperator.fromSymbol((String) spOperator.getSelectedItem());
+            preview.distanceMm = parseDistanceMm(
+                    etDistance.getText() == null ? "" : etDistance.getText().toString(),
+                    spUnit.getSelectedItemPosition() == 0);
+            playTestPreview(preview);
+        });
 
         new AlertDialog.Builder(requireContext())
                 .setTitle(isNew ? "New alert rule" : "Edit alert rule")
@@ -192,6 +245,16 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
                     draft.distanceMm = parseDistanceMm(
                             etDistance.getText() == null ? "" : etDistance.getText().toString(),
                             spUnit.getSelectedItemPosition() == 0);
+                    draft.vibrate = swVibrate.isChecked();
+                    Object pat = spVibrationPattern.getSelectedItem();
+                    draft.vibrationPattern = pat == null ? AlertRule.VIB_SHORT : pat.toString();
+                    draft.speak = swSpeak.isChecked();
+                    draft.spokenText = etSpoken.getText() == null
+                            ? AlertRule.DEFAULT_SPOKEN_TEXT
+                            : etSpoken.getText().toString().trim();
+                    if (draft.spokenText.isEmpty()) draft.spokenText = AlertRule.DEFAULT_SPOKEN_TEXT;
+                    draft.cooldownSeconds = parseCooldownSeconds(
+                            etCooldown.getText() == null ? "" : etCooldown.getText().toString());
                     if (isNew) {
                         AlertManager.getInstance().addRule(draft);
                     } else {
@@ -199,11 +262,14 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
                     }
                     pendingRule = null;
                     pendingSoundLabel = null;
+                    stopTestPreview();
                 })
                 .setNegativeButton("Cancel", (d, w) -> {
                     pendingRule = null;
                     pendingSoundLabel = null;
+                    stopTestPreview();
                 })
+                .setOnDismissListener(d -> stopTestPreview())
                 .show();
     }
 
@@ -220,6 +286,30 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
         ringtonePicker.launch(intent);
     }
 
+    /** Play sound + TTS + vibration for ~2 seconds, stopping early if the dialog closes. */
+    private void playTestPreview(AlertRule preview) {
+        stopTestPreview();
+        if (testSoundPlayer == null) testSoundPlayer = new AlertSoundPlayer(requireContext());
+        if (testTts == null) testTts = new AlertTtsPlayer(requireContext());
+        if (testVibrator == null) testVibrator = new AlertVibrator(requireContext());
+
+        try { testSoundPlayer.play(preview); } catch (Exception ignored) {}
+        try { testVibrator.vibrate(preview); } catch (Exception ignored) {}
+        try { testTts.speak(preview, /*targetIndex=*/0, preview.distanceMm); } catch (Exception ignored) {}
+
+        testHandler.postDelayed(this::stopTestPreview, TEST_PREVIEW_MS);
+    }
+
+    private void stopTestPreview() {
+        testHandler.removeCallbacksAndMessages(null);
+        if (testSoundPlayer != null) {
+            try { testSoundPlayer.stopAll(); } catch (Exception ignored) {}
+        }
+        if (testVibrator != null) {
+            try { testVibrator.cancel(); } catch (Exception ignored) {}
+        }
+    }
+
     // -------- Helpers --------
 
     private static String formatDistance(int mm) {
@@ -233,6 +323,15 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
             return (int) Math.round(isMeters ? v * 1000.0 : v);
         } catch (NumberFormatException e) {
             return 1000;
+        }
+    }
+
+    private static int parseCooldownSeconds(String text) {
+        try {
+            int v = Integer.parseInt(text.trim());
+            return Math.max(0, v);
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 
@@ -253,6 +352,12 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
         r.soundLabel = src.soundLabel;
         r.audioStream = src.audioStream;
         r.loop = src.loop;
+        r.vibrate = src.vibrate;
+        r.vibrationPattern = src.vibrationPattern;
+        r.speak = src.speak;
+        r.spokenText = src.spokenText;
+        r.ttsLanguageTag = src.ttsLanguageTag;
+        r.cooldownSeconds = src.cooldownSeconds;
         return r;
     }
 }

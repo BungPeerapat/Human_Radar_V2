@@ -51,6 +51,29 @@ public class AlertRuleAdapter extends RecyclerView.Adapter<AlertRuleAdapter.VH> 
         String sub = r.streamLabel() + " • " + (r.soundLabel == null ? "(none)" : r.soundLabel)
                 + (r.loop ? " • loop" : "");
         h.subtitle.setText(sub);
+
+        StringBuilder badges = new StringBuilder();
+        if (r.vibrate) {
+            badges.append("🔊 vibrate");
+            if (r.vibrationPattern != null && !r.vibrationPattern.isEmpty()) {
+                badges.append(" (").append(r.vibrationPattern).append(")");
+            }
+        }
+        if (r.speak) {
+            if (badges.length() > 0) badges.append(" • ");
+            badges.append("🗣 speak");
+        }
+        if (r.cooldownSeconds > 0) {
+            if (badges.length() > 0) badges.append(" • ");
+            badges.append("cooldown ").append(r.cooldownSeconds).append("s");
+        }
+        if (badges.length() == 0) {
+            h.badges.setVisibility(View.GONE);
+        } else {
+            h.badges.setVisibility(View.VISIBLE);
+            h.badges.setText(badges.toString());
+        }
+
         h.toggle.setOnCheckedChangeListener(null);
         h.toggle.setChecked(r.enabled);
         h.toggle.setOnCheckedChangeListener((btn, on) -> callbacks.onToggle(r, on));
@@ -65,7 +88,7 @@ public class AlertRuleAdapter extends RecyclerView.Adapter<AlertRuleAdapter.VH> 
 
     static class VH extends RecyclerView.ViewHolder {
         final MaterialSwitch toggle;
-        final TextView title, subtitle;
+        final TextView title, subtitle, badges;
         final ImageButton editBtn, deleteBtn;
 
         VH(@NonNull View itemView) {
@@ -73,6 +96,7 @@ public class AlertRuleAdapter extends RecyclerView.Adapter<AlertRuleAdapter.VH> 
             toggle = itemView.findViewById(R.id.sw_alert_enabled);
             title = itemView.findViewById(R.id.tv_rule_title);
             subtitle = itemView.findViewById(R.id.tv_rule_subtitle);
+            badges = itemView.findViewById(R.id.tv_rule_badges);
             editBtn = itemView.findViewById(R.id.btn_rule_edit);
             deleteBtn = itemView.findViewById(R.id.btn_rule_delete);
         }

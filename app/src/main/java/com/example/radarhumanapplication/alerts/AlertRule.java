@@ -15,6 +15,15 @@ public class AlertRule {
     /** Apply rule to any of the three radar targets. */
     public static final int TARGET_ANY = -1;
 
+    /** Default spoken text template. Supports placeholders {target}, {distance}, {operator}. */
+    public static final String DEFAULT_SPOKEN_TEXT = "Target {target} at {distance} meters";
+
+    /** Vibration patterns. Stored as string for stable serialization. */
+    public static final String VIB_SHORT = "Short";
+    public static final String VIB_MEDIUM = "Medium";
+    public static final String VIB_LONG = "Long";
+    public static final String VIB_SOS = "SOS";
+
     @SerializedName("id")
     public String id = UUID.randomUUID().toString();
 
@@ -51,6 +60,32 @@ public class AlertRule {
     /** Loop the sound until the rule no longer matches. */
     @SerializedName("loop")
     public boolean loop = false;
+
+    // ---- New (Batch B) fields ----
+
+    /** Vibrate when this rule fires. */
+    @SerializedName("vibrate")
+    public boolean vibrate = false;
+
+    /** One of {@link #VIB_SHORT}, {@link #VIB_MEDIUM}, {@link #VIB_LONG}, {@link #VIB_SOS}. */
+    @SerializedName("vibrationPattern")
+    public String vibrationPattern = VIB_SHORT;
+
+    /** Speak the rule via TTS when it fires. */
+    @SerializedName("speak")
+    public boolean speak = false;
+
+    /** Spoken text template. See {@link #DEFAULT_SPOKEN_TEXT}. */
+    @SerializedName("spokenText")
+    public String spokenText = DEFAULT_SPOKEN_TEXT;
+
+    /** BCP-47 language tag for TTS, e.g. {@code "en-US"}. */
+    @SerializedName("ttsLanguageTag")
+    public String ttsLanguageTag = "en-US";
+
+    /** Cooldown between firings for the same rule+target key, in seconds. 0 = no cooldown. */
+    @SerializedName("cooldownSeconds")
+    public int cooldownSeconds = 0;
 
     public AlertRule() {}
 
@@ -92,5 +127,10 @@ public class AlertRule {
                 "Media (speaker)",
                 "System",
         };
+    }
+
+    /** All vibration pattern names (for spinners). */
+    public static String[] vibrationPatternOptions() {
+        return new String[]{ VIB_SHORT, VIB_MEDIUM, VIB_LONG, VIB_SOS };
     }
 }
