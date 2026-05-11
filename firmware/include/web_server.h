@@ -43,6 +43,9 @@ private:
     void handleGetConfig();
     void handleSaveConfig();
     void handleResetConfig();
+    void handleGetAlert();
+    void handleSaveAlert();
+    void handleTestAlert();
 
     static void onWebSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length);
 };

@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
+#include "alert_pattern.h"
+
 // ============================================================================
 // Firmware Version
 // ============================================================================
@@ -20,6 +22,18 @@ struct DetectionZone {
 
 // ============================================================================
 // ConfigManager: Stores settings in ESP32 NVS (Non-Volatile Storage)
+// Survives reboot and re-upload. No SPIFFS/files needed.
+//
+// NVS keys:
+//   wifi_mode, wifi_ssid, wifi_pass
+//   mqtt_en, mqtt_proto, mqtt_host, mqtt_port, mqtt_user, mqtt_pass
+//   dev_name
+//   pub_int     - publish interval (ms)
+//   unm_dly     - unmanned delay (ms)
+//   tgt_tout    - target timeout (ms)
+//   multi_tgt   - multi-target mode (0/1)
+//   sensitivity - sensitivity level (0-9)
+//   zoneN_en, zoneN_x1/y1/x2/y2  (N=0,1,2)
 // ============================================================================
 
 struct DeviceConfig {
@@ -48,6 +62,9 @@ struct DeviceConfig {
 
     // Detection Zones (3 zones, LD2450 supports hardware zone filtering)
     DetectionZone zones[3];
+
+    // Alert / LED+Buzzer (GPIO26)
+    AlertPattern::Config alert;
 };
 
 class ConfigManager {
@@ -67,6 +84,10 @@ public:
     void setMultiTargetMode(uint8_t mode);
     void setSensitivity(uint8_t level);
     void setZone(uint8_t idx, bool enabled, int16_t x1, int16_t y1, int16_t x2, int16_t y2);
+
+    // Alert config (LED+buzzer on GPIO26)
+    const AlertPattern::Config& getAlertConfig() const { return _cfg.alert; }
+    void setAlertConfig(const AlertPattern::Config& a);
 
     void resetToDefaults();
 

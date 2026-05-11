@@ -51,6 +51,15 @@ void ConfigManager::applyDefaults() {
     _cfg.zones[0] = {true, -3000, 0, 3000, 6000};
     _cfg.zones[1] = {false, 0, 0, 0, 0};
     _cfg.zones[2] = {false, 0, 0, 0, 0};
+
+    // Alert defaults (matches AlertPattern::Config defaults; restated for clarity)
+    _cfg.alert.alertEnabled  = true;
+    _cfg.alert.ledWifiEnabled = true;
+    _cfg.alert.beepShortMs   = 200;
+    _cfg.alert.beepLongMs    = 800;
+    _cfg.alert.beepGapMs     = 200;
+    _cfg.alert.debounceMs    = 500;
+    _cfg.alert.maxRangeMm    = 6000;
 }
 
 void ConfigManager::loadFromNVS() {
@@ -93,6 +102,15 @@ void ConfigManager::loadFromNVS() {
         snprintf(key, sizeof(key), "z%d_y2", i);
         _cfg.zones[i].y2 = _prefs.getShort(key, i == 0 ? 6000 : 0);
     }
+
+    // Alert / LED+Buzzer
+    _cfg.alert.alertEnabled   = _prefs.getUChar ("al_en",  1) != 0;
+    _cfg.alert.ledWifiEnabled = _prefs.getUChar ("al_lw",  1) != 0;
+    _cfg.alert.beepShortMs    = _prefs.getUShort("al_bs",  200);
+    _cfg.alert.beepLongMs     = _prefs.getUShort("al_bl",  800);
+    _cfg.alert.beepGapMs      = _prefs.getUShort("al_bg",  200);
+    _cfg.alert.debounceMs     = _prefs.getUShort("al_db",  500);
+    _cfg.alert.maxRangeMm     = _prefs.getUShort("al_mr",  6000);
 
     _prefs.end();
 }
@@ -214,6 +232,25 @@ void ConfigManager::saveZone(uint8_t idx) {
     snprintf(key, sizeof(key), "z%d_y2", idx);
     _prefs.putShort(key, _cfg.zones[idx].y2);
     _prefs.end();
+}
+
+// ============================================================================
+// Alert / LED+Buzzer
+// ============================================================================
+void ConfigManager::setAlertConfig(const AlertPattern::Config& a) {
+    _cfg.alert = a;
+    _prefs.begin(NVS_NAMESPACE, false);
+    _prefs.putUChar ("al_en", a.alertEnabled  ? 1 : 0);
+    _prefs.putUChar ("al_lw", a.ledWifiEnabled ? 1 : 0);
+    _prefs.putUShort("al_bs", a.beepShortMs);
+    _prefs.putUShort("al_bl", a.beepLongMs);
+    _prefs.putUShort("al_bg", a.beepGapMs);
+    _prefs.putUShort("al_db", a.debounceMs);
+    _prefs.putUShort("al_mr", a.maxRangeMm);
+    _prefs.end();
+    Log::info(TAG_CONFIG, "Alert saved: en=%d ledWifi=%d short=%u long=%u gap=%u dbnc=%u range=%u",
+              (int)a.alertEnabled, (int)a.ledWifiEnabled,
+              a.beepShortMs, a.beepLongMs, a.beepGapMs, a.debounceMs, a.maxRangeMm);
 }
 
 // ============================================================================

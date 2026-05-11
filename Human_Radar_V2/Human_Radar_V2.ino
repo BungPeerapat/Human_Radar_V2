@@ -23,6 +23,8 @@
  *    ESP32 GPIO17 (TX) ---> LD2450 RX
  *    ESP32 5V          ---> LD2450 VCC (needs >200mA)
  *    ESP32 GND         ---> LD2450 GND
+ *    ESP32 GPIO26      ---> [R 330Ω] -> LED -> GND
+ *                       \-> Buzzer (3.3V active) -> GND
  *
  *  Usage:
  *    1. Upload this sketch
@@ -32,10 +34,13 @@
  * ============================================================================
  */
 
+#include <WiFi.h>
+
 #include "radar_driver.h"
 #include "config_manager.h"
 #include "web_server.h"
 #include "mqtt_client.h"
+#include "alert_pattern.h"
 #include "logger.h"
 
 // ============================================================================
@@ -43,11 +48,27 @@
 // ============================================================================
 static constexpr int RADAR_RX_PIN = 16;  // ESP32 RX <- LD2450 TX
 static constexpr int RADAR_TX_PIN = 17;  // ESP32 TX -> LD2450 RX
+static constexpr int ALERT_PIN    = 26;  // LED + buzzer (parallel, active-HIGH)
 
 // ============================================================================
 // Globals
 // ============================================================================
 RadarDriver radar;
+
+// ============================================================================
+// Helpers
+// ============================================================================
+static uint8_t countActiveTargets(const RadarFrame& frame, uint16_t maxRangeMm) {
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < RADAR_MAX_TARGETS; i++) {
+        const RadarTarget& t = frame.targets[i];
+        if (!t.present) continue;
+        if (t.x == 0 && t.y == 0) continue;          // skip empty slot
+        if (maxRangeMm > 0 && t.distance > maxRangeMm) continue;
+        n++;
+    }
+    return n;
+}
 
 // ============================================================================
 // Setup
@@ -62,16 +83,33 @@ void setup() {
     Log::info(TAG_SYSTEM, "  MQTT + Remote Config + Log Viewer");
     Log::info(TAG_SYSTEM, "========================================");
 
+    // Alert pattern (LED + buzzer on GPIO26). Init early so WiFi connect blink works.
+    alertPattern.begin(ALERT_PIN);
+
     // Load saved settings from NVS (WiFi, MQTT, device name)
     configManager.begin();
+
+    // Apply persisted alert config (filled by Phase 2 once /api/alert lands)
+    alertPattern.setConfig(configManager.getAlertConfig());
 
     // Init radar sensor
     Log::info(TAG_SENSOR, "UART2: RX=GPIO%d, TX=GPIO%d", RADAR_RX_PIN, RADAR_TX_PIN);
     radar.begin(RADAR_RX_PIN, RADAR_TX_PIN);
     Log::info(TAG_SENSOR, "Radar initialized at %lu baud", RADAR_BAUD);
 
+    // Start the slow WiFi indicator before begin() (begin() blocks while joining)
+    alertPattern.onWifiConnecting();
+
     // Init WiFi + Web Server + WebSocket
     webServer.begin();
+
+    // Pulse the "connected" indicator if STA join succeeded
+    if (WiFi.status() == WL_CONNECTED) {
+        alertPattern.onWifiConnected();
+    } else {
+        // AP mode counts as "online" from the device's point of view.
+        alertPattern.onWifiConnected();
+    }
 
     // Init MQTT (only connects if enabled + configured)
     mqttClient.begin();
@@ -84,6 +122,33 @@ void setup() {
 }
 
 // ============================================================================
+// WiFi state monitor (STA mode only - AP mode never "drops")
+// ============================================================================
+static void monitorWifi() {
+    static uint32_t lastCheck = 0;
+    static bool     wasConnected = (WiFi.status() == WL_CONNECTED);
+
+    const uint32_t now = millis();
+    if (now - lastCheck < 1000) return;
+    lastCheck = now;
+
+    // AP mode: nothing to watch
+    if (WiFi.getMode() == WIFI_AP) return;
+
+    const bool nowConnected = (WiFi.status() == WL_CONNECTED);
+    if (nowConnected != wasConnected) {
+        if (nowConnected) {
+            Log::info(TAG_SYSTEM, "WiFi reconnected");
+            alertPattern.onWifiConnected();
+        } else {
+            Log::warn(TAG_SYSTEM, "WiFi link lost");
+            alertPattern.onWifiDisconnected();
+        }
+        wasConnected = nowConnected;
+    }
+}
+
+// ============================================================================
 // Main Loop
 // ============================================================================
 void loop() {
@@ -93,7 +158,10 @@ void loop() {
     // 2. Handle MQTT connection
     mqttClient.loop();
 
-    // 3. Read radar data
+    // 3. WiFi state edge detection (no-op until status flips)
+    monitorWifi();
+
+    // 4. Read radar data
     if (radar.update()) {
         const RadarFrame& frame = radar.getLatestFrame();
 
@@ -102,5 +170,13 @@ void loop() {
 
         // Publish to MQTT broker
         mqttClient.publishFrame(frame, radar.getFrameCount(), radar.getErrorCount());
+
+        // Feed debounced count into the alert state machine
+        const auto& acfg = alertPattern.getConfig();
+        const uint8_t active = countActiveTargets(frame, acfg.maxRangeMm);
+        alertPattern.onTargetCount(active);
     }
+
+    // 5. Pin scheduler (non-blocking)
+    alertPattern.update();
 }

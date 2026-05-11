@@ -1,17 +1,27 @@
 package com.example.radarhumanapplication;
 
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.example.radarhumanapplication.BuildConfig;
+import com.example.radarhumanapplication.alerts.AlertHttpClient;
+import com.example.radarhumanapplication.alerts.AlertPatternConfig;
 import com.example.radarhumanapplication.update.UpdateDialog;
 import com.example.radarhumanapplication.update.UpdateManager;
 import com.google.android.material.button.MaterialButton;
@@ -29,6 +39,34 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private MaterialButton btnSendConfig, btnCheckUpdate;
     private TextView tvConfigAck, tvAppVersion;
     private MqttService mqtt;
+
+    // Alert (GPIO26) UI
+    private MaterialSwitch alertEnable, alertLedWifi;
+    private TextInputEditText alertShortMs, alertLongMs, alertGapMs, alertDebounceMs, alertMaxRange, alertDeviceIp;
+    private RadioGroup alertSoundType;
+    private RadioButton alertSoundTone, alertSoundWav, alertSoundTts;
+    private Slider alertVolume;
+    private TextView alertVolumeLabel, alertStatus;
+    private MaterialButton btnAlertFetch, btnAlertPush, btnAlertTestLocal, btnAlertTestRemote;
+    private MaterialButton btnPickShort, btnPickLong;
+    private TextView alertShortUriLabel, alertLongUriLabel;
+    private String pickedShortUri = "";
+    private String pickedLongUri  = "";
+    private ActivityResultLauncher<String[]> pickShortLauncher;
+    private ActivityResultLauncher<String[]> pickLongLauncher;
+    private final AlertHttpClient alertHttp = new AlertHttpClient();
+    private static final String ALERT_PREFS = "alert_prefs";
+
+    @Override
+    public void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        pickShortLauncher = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                uri -> onSoundPicked(uri, true));
+        pickLongLauncher = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                uri -> onSoundPicked(uri, false));
+    }
 
     @Nullable
     @Override
@@ -59,6 +97,244 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnSendConfig.setOnClickListener(this::onSendConfig);
         btnCheckUpdate.setOnClickListener(this::onCheckUpdate);
         mqtt.addConfigAckListener(this);
+
+        bindAlertUi(v);
+    }
+
+    // ------------------------------------------------------------------
+    //  Alert / GPIO26 buzzer card
+    // ------------------------------------------------------------------
+    private void bindAlertUi(View v) {
+        alertEnable      = v.findViewById(R.id.alert_enable);
+        alertLedWifi     = v.findViewById(R.id.alert_led_wifi);
+        alertShortMs     = v.findViewById(R.id.alert_short_ms);
+        alertLongMs      = v.findViewById(R.id.alert_long_ms);
+        alertGapMs       = v.findViewById(R.id.alert_gap_ms);
+        alertDebounceMs  = v.findViewById(R.id.alert_debounce_ms);
+        alertMaxRange    = v.findViewById(R.id.alert_max_range);
+        alertDeviceIp    = v.findViewById(R.id.alert_device_ip);
+        alertSoundType   = v.findViewById(R.id.alert_sound_type);
+        alertSoundTone   = v.findViewById(R.id.alert_sound_tone);
+        alertSoundWav    = v.findViewById(R.id.alert_sound_wav);
+        alertSoundTts    = v.findViewById(R.id.alert_sound_tts);
+        alertVolume      = v.findViewById(R.id.alert_volume);
+        alertVolumeLabel = v.findViewById(R.id.alert_volume_label);
+        alertStatus      = v.findViewById(R.id.alert_status);
+        btnAlertFetch       = v.findViewById(R.id.btn_alert_fetch);
+        btnAlertPush        = v.findViewById(R.id.btn_alert_push);
+        btnAlertTestLocal   = v.findViewById(R.id.btn_alert_test_local);
+        btnAlertTestRemote  = v.findViewById(R.id.btn_alert_test_remote);
+        btnPickShort        = v.findViewById(R.id.btn_pick_short);
+        btnPickLong         = v.findViewById(R.id.btn_pick_long);
+        alertShortUriLabel  = v.findViewById(R.id.alert_short_uri_label);
+        alertLongUriLabel   = v.findViewById(R.id.alert_long_uri_label);
+
+        AlertPatternConfig cfg = loadAlertPrefs();
+        applyAlertCfgToUi(cfg);
+        mqtt.updateAlertConfig(cfg);
+
+        alertVolume.addOnChangeListener((slider, value, fromUser) ->
+                alertVolumeLabel.setText("Mobile volume: " + (int) value + "%"));
+
+        btnAlertFetch.setOnClickListener(view -> onAlertFetch());
+        btnAlertPush.setOnClickListener(view -> onAlertPush());
+        btnAlertTestLocal.setOnClickListener(view -> onAlertTestLocal());
+        btnAlertTestRemote.setOnClickListener(view -> onAlertTestRemote());
+        btnPickShort.setOnClickListener(view -> launchPicker(true));
+        btnPickLong.setOnClickListener(view -> launchPicker(false));
+    }
+
+    private void launchPicker(boolean isShort) {
+        String[] mimes = {"audio/*"};
+        try {
+            (isShort ? pickShortLauncher : pickLongLauncher).launch(mimes);
+        } catch (Exception e) {
+            Toast.makeText(requireContext(),
+                    "No file picker available: " + e.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void onSoundPicked(@Nullable Uri uri, boolean isShort) {
+        if (uri == null) return;
+        // Persist read permission across reboots so MediaPlayer can open it later
+        try {
+            int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            requireContext().getContentResolver().takePersistableUriPermission(uri, flags);
+        } catch (SecurityException ignored) {
+            // Some providers don't support persistable grants; we'll still try to play it.
+        }
+        String s = uri.toString();
+        if (isShort) {
+            pickedShortUri = s;
+            alertShortUriLabel.setText("Short beep sound: " + lastSegment(s));
+        } else {
+            pickedLongUri = s;
+            alertLongUriLabel.setText("Long beep sound: " + lastSegment(s));
+        }
+        // Force WAV mode + push new config so the player reloads MediaPlayer with the new URI
+        alertSoundWav.setChecked(true);
+        AlertPatternConfig c = readAlertCfgFromUi();
+        saveAlertPrefs(c);
+        mqtt.updateAlertConfig(c);
+        setAlertStatus("Sound saved (" + (isShort ? "short" : "long") + ")", false);
+    }
+
+    private static String lastSegment(String uriStr) {
+        if (uriStr == null || uriStr.isEmpty()) return "(none)";
+        int slash = uriStr.lastIndexOf('/');
+        if (slash < 0 || slash == uriStr.length() - 1) return uriStr;
+        String tail = uriStr.substring(slash + 1);
+        // Strip any document id prefix
+        int colon = tail.lastIndexOf(':');
+        return colon >= 0 ? tail.substring(colon + 1) : tail;
+    }
+
+    private void applyAlertCfgToUi(AlertPatternConfig c) {
+        alertEnable.setChecked(c.alertEnabled);
+        alertLedWifi.setChecked(c.ledWifiEnabled);
+        alertShortMs.setText(String.valueOf(c.beepShortMs));
+        alertLongMs.setText(String.valueOf(c.beepLongMs));
+        alertGapMs.setText(String.valueOf(c.beepGapMs));
+        alertDebounceMs.setText(String.valueOf(c.debounceMs));
+        alertMaxRange.setText(String.valueOf(c.maxRangeMm));
+        alertVolume.setValue(Math.max(0, Math.min(100, c.volumePct)));
+        alertVolumeLabel.setText("Mobile volume: " + c.volumePct + "%");
+        switch (c.soundType) {
+            case WAV:  alertSoundWav.setChecked(true); break;
+            case TTS:  alertSoundTts.setChecked(true); break;
+            case TONE: default: alertSoundTone.setChecked(true); break;
+        }
+        pickedShortUri = c.shortSoundUri == null ? "" : c.shortSoundUri;
+        pickedLongUri  = c.longSoundUri  == null ? "" : c.longSoundUri;
+        alertShortUriLabel.setText("Short beep sound: "
+                + (pickedShortUri.isEmpty() ? "(none)" : lastSegment(pickedShortUri)));
+        alertLongUriLabel.setText("Long beep sound: "
+                + (pickedLongUri.isEmpty()  ? "(none)" : lastSegment(pickedLongUri)));
+    }
+
+    private AlertPatternConfig readAlertCfgFromUi() {
+        AlertPatternConfig c = new AlertPatternConfig();
+        c.alertEnabled   = alertEnable.isChecked();
+        c.ledWifiEnabled = alertLedWifi.isChecked();
+        c.beepShortMs    = clamp(parseInt(getText(alertShortMs),    200), 50,  5000);
+        c.beepLongMs     = clamp(parseInt(getText(alertLongMs),     800), 100, 10000);
+        c.beepGapMs      = clamp(parseInt(getText(alertGapMs),      200), 50,  5000);
+        c.debounceMs     = clamp(parseInt(getText(alertDebounceMs), 500), 0,   10000);
+        c.maxRangeMm     = clamp(parseInt(getText(alertMaxRange),   6000), 0, 20000);
+        c.volumePct      = (int) alertVolume.getValue();
+        if (alertSoundWav.isChecked())      c.soundType = AlertPatternConfig.SoundType.WAV;
+        else if (alertSoundTts.isChecked()) c.soundType = AlertPatternConfig.SoundType.TTS;
+        else                                c.soundType = AlertPatternConfig.SoundType.TONE;
+        c.shortSoundUri = pickedShortUri;
+        c.longSoundUri  = pickedLongUri;
+        return c;
+    }
+
+    private void onAlertFetch() {
+        String ip = getText(alertDeviceIp);
+        if (ip.isEmpty()) { setAlertStatus("Enter device IP first", true); return; }
+        setAlertStatus("Fetching from " + ip + "...", false);
+        alertHttp.fetchConfig(ip, (cfg, err) -> {
+            if (!isAdded()) return;
+            if (err != null) { setAlertStatus("Fetch failed: " + err, true); return; }
+            // Keep mobile-only fields (sound type/volume) from current UI
+            AlertPatternConfig merged = readAlertCfgFromUi();
+            merged.alertEnabled   = cfg.alertEnabled;
+            merged.ledWifiEnabled = cfg.ledWifiEnabled;
+            merged.beepShortMs    = cfg.beepShortMs;
+            merged.beepLongMs     = cfg.beepLongMs;
+            merged.beepGapMs      = cfg.beepGapMs;
+            merged.debounceMs     = cfg.debounceMs;
+            merged.maxRangeMm     = cfg.maxRangeMm;
+            applyAlertCfgToUi(merged);
+            saveAlertPrefs(merged);
+            mqtt.updateAlertConfig(merged);
+            setAlertStatus("Fetched OK", false);
+        });
+    }
+
+    private void onAlertPush() {
+        String ip = getText(alertDeviceIp);
+        AlertPatternConfig c = readAlertCfgFromUi();
+        saveAlertPrefs(c);
+        mqtt.updateAlertConfig(c);
+        if (ip.isEmpty()) { setAlertStatus("Saved locally (no IP for ESP32)", false); return; }
+        setAlertStatus("Pushing to " + ip + "...", false);
+        alertHttp.pushConfig(ip, c, (ok, err) -> {
+            if (!isAdded()) return;
+            if (Boolean.TRUE.equals(ok)) setAlertStatus("Pushed OK", false);
+            else setAlertStatus("Push failed: " + err, true);
+        });
+    }
+
+    private void onAlertTestLocal() {
+        AlertPatternConfig c = readAlertCfgFromUi();
+        mqtt.updateAlertConfig(c);
+        if (mqtt.getAlertPlayer() != null) {
+            mqtt.getAlertPlayer().triggerTest(2, false);
+            setAlertStatus("Phone test: 2 beeps", false);
+        }
+    }
+
+    private void onAlertTestRemote() {
+        String ip = getText(alertDeviceIp);
+        if (ip.isEmpty()) { setAlertStatus("Enter device IP first", true); return; }
+        setAlertStatus("Triggering ESP32 buzzer...", false);
+        alertHttp.testBeep(ip, 2, false, (ok, err) -> {
+            if (!isAdded()) return;
+            if (Boolean.TRUE.equals(ok)) setAlertStatus("ESP32 test sent", false);
+            else setAlertStatus("ESP32 test failed: " + err, true);
+        });
+    }
+
+    private void setAlertStatus(String text, boolean error) {
+        alertStatus.setText(text);
+        alertStatus.setTextColor(requireContext().getColor(
+                error ? R.color.radar_red : R.color.radar_green));
+    }
+
+    private SharedPreferences alertPrefs() {
+        return requireContext().getSharedPreferences(ALERT_PREFS, 0);
+    }
+
+    private AlertPatternConfig loadAlertPrefs() {
+        SharedPreferences p = alertPrefs();
+        AlertPatternConfig c = new AlertPatternConfig();
+        c.alertEnabled   = p.getBoolean("ae", c.alertEnabled);
+        c.ledWifiEnabled = p.getBoolean("le", c.ledWifiEnabled);
+        c.beepShortMs    = p.getInt("bs", c.beepShortMs);
+        c.beepLongMs     = p.getInt("bl", c.beepLongMs);
+        c.beepGapMs      = p.getInt("bg", c.beepGapMs);
+        c.debounceMs     = p.getInt("db", c.debounceMs);
+        c.maxRangeMm     = p.getInt("mr", c.maxRangeMm);
+        c.volumePct      = p.getInt("vol", c.volumePct);
+        String st        = p.getString("st", "TONE");
+        try { c.soundType = AlertPatternConfig.SoundType.valueOf(st); }
+        catch (Exception ignored) { c.soundType = AlertPatternConfig.SoundType.TONE; }
+        c.shortSoundUri  = p.getString("uri_short", "");
+        c.longSoundUri   = p.getString("uri_long",  "");
+        return c;
+    }
+
+    private void saveAlertPrefs(AlertPatternConfig c) {
+        alertPrefs().edit()
+                .putBoolean("ae", c.alertEnabled)
+                .putBoolean("le", c.ledWifiEnabled)
+                .putInt("bs", c.beepShortMs)
+                .putInt("bl", c.beepLongMs)
+                .putInt("bg", c.beepGapMs)
+                .putInt("db", c.debounceMs)
+                .putInt("mr", c.maxRangeMm)
+                .putInt("vol", c.volumePct)
+                .putString("st", c.soundType.name())
+                .putString("uri_short", c.shortSoundUri == null ? "" : c.shortSoundUri)
+                .putString("uri_long",  c.longSoundUri  == null ? "" : c.longSoundUri)
+                .apply();
+    }
+
+    private int clamp(int v, int lo, int hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
     }
 
     private void onCheckUpdate(View v) {
@@ -92,6 +368,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     @Override
     public void onDestroyView() {
         mqtt.removeConfigAckListener(this);
+        alertHttp.shutdown();
         super.onDestroyView();
     }
 

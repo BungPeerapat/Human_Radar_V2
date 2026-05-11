@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Human Radar V2 — Wiring Diagram (ESP32 ↔ HLK-LD2450)</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#121821; --line:#1f2a37; --text:#e6edf3;
+    --muted:#9aa7b4; --accent:#4cc2ff; --warn:#ffb454; --danger:#ff6b6b; --ok:#6ee7b7;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI","Noto Sans Thai",sans-serif;
+       background:var(--bg);color:var(--text);line-height:1.55}
+  header{padding:28px 32px;border-bottom:1px solid var(--line);
+         background:linear-gradient(180deg,#101722,#0b0f14)}
+  h1{margin:0 0 6px;font-size:22px;letter-spacing:.3px}
+  header p{margin:0;color:var(--muted);font-size:14px}
+  main{max-width:1080px;margin:0 auto;padding:24px 32px 80px}
+  h2{margin:32px 0 12px;font-size:18px;border-left:3px solid var(--accent);padding-left:10px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:12px 0}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:#0e1620;color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  code,kbd{font-family:var(--mono);background:#0a1018;border:1px solid var(--line);
+           padding:1px 6px;border-radius:4px;font-size:.92em;color:#cfe6ff}
+  .pin{display:inline-block;min-width:64px;text-align:center;padding:2px 8px;border-radius:999px;
+       font-family:var(--mono);font-weight:600;font-size:12px}
+  .pin.power{background:#3a1f1f;color:#ffb4b4;border:1px solid #6b2a2a}
+  .pin.gnd  {background:#1f1f1f;color:#cfcfcf;border:1px solid #444}
+  .pin.uart {background:#10324a;color:#9fd6ff;border:1px solid #1d5680}
+  .pin.free {background:#15301f;color:#a7f3c4;border:1px solid #245c3c}
+  .pin.warn {background:#3a2a10;color:#ffd79a;border:1px solid #6b4a1a}
+  .pin.danger{background:#3a1212;color:#ffb4b4;border:1px solid #802020}
+  .legend span{margin-right:14px;font-size:13px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:780px){.grid{grid-template-columns:1fr}}
+  .ascii{font-family:var(--mono);white-space:pre;background:#0a1018;border:1px solid var(--line);
+         border-radius:8px;padding:14px;font-size:12.5px;color:#cfe6ff;overflow:auto}
+  .badge{display:inline-block;padding:2px 8px;font-size:11px;border-radius:4px;
+         background:#1b2a3a;color:#9fd6ff;border:1px solid #1d5680;margin-left:6px}
+  .badge.ok{background:#15301f;color:#a7f3c4;border-color:#245c3c}
+  .badge.no{background:#3a1212;color:#ffb4b4;border-color:#802020}
+  .note{border-left:3px solid var(--warn);background:#1c1608;padding:10px 14px;border-radius:6px;color:#ffd79a;font-size:14px}
+  .ok  {border-left:3px solid var(--ok);background:#0c1d14;padding:10px 14px;border-radius:6px;color:#a7f3c4;font-size:14px}
+  ul{margin:6px 0 6px 20px}
+  small{color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>Human Radar V2 — Wiring Diagram</h1>
+  <p>ESP32-WROOM32 ↔ HLK-LD2450 (24 GHz mmWave radar)</p>
+</header>
+
+<main>
+
+<section class="card ok">
+  <strong>คำตอบเร็ว ๆ:</strong> <b>GPIO26 ไม่ได้ถูกใช้</b> ในเฟิร์มแวร์เลย — ตรวจจาก
+  <code>Human_Radar_V2.ino</code> และโมดูลทั้งหมด ไม่มี <code>pinMode(26, …)</code> หรือการอ้างอิง GPIO26
+  ใด ๆ จึงเป็นพินว่าง (free) ใช้ต่ออุปกรณ์เพิ่มเติมได้ เช่น LED, buzzer, ปุ่ม ฯลฯ
+</section>
+
+<h2>1) สรุปการต่อสาย LD2450 → ESP32 (4 เส้น)</h2>
+
+<div class="card">
+<table>
+  <thead><tr>
+    <th>LD2450</th><th>ทิศทาง</th><th>ESP32-WROOM32</th><th>หมายเหตุ</th>
+  </tr></thead>
+  <tbody>
+    <tr><td><span class="pin power">VCC (5V)</span></td><td>→</td>
+        <td><span class="pin power">5V / VIN</span></td>
+        <td>LD2450 ใช้ 5V (กินกระแส ~80 mA peak)</td></tr>
+    <tr><td><span class="pin gnd">GND</span></td><td>↔</td>
+        <td><span class="pin gnd">GND</span></td><td>ต่อ GND ร่วมกัน</td></tr>
+    <tr><td><span class="pin uart">TX</span></td><td>→</td>
+        <td><span class="pin uart">GPIO16 (RX2)</span></td>
+        <td>ข้อมูล radar 256000 baud (UART2 RX)</td></tr>
+    <tr><td><span class="pin uart">RX</span></td><td>←</td>
+        <td><span class="pin uart">GPIO17 (TX2)</span></td>
+        <td>ESP32 ส่งคำสั่ง (UART2 TX)</td></tr>
+  </tbody>
+</table>
+<p class="legend" style="margin-top:10px">
+  <span><span class="pin power">●</span> Power 5V</span>
+  <span><span class="pin gnd">●</span> Ground</span>
+  <span><span class="pin uart">●</span> UART2</span>
+  <span><span class="pin free">●</span> Free</span>
+</p>
+</div>
+
+<h2>2) แผนภาพ (ASCII)</h2>
+<div class="ascii">
+   HLK-LD2450                       ESP32-WROOM32
+  ┌──────────────┐                 ┌─────────────────┐
+  │ VCC  ●───────┼─── 5V ──────────┤ 5V / VIN        │
+  │ GND  ●───────┼─── GND ─────────┤ GND             │
+  │ TX   ●───────┼──── data ──────►│ GPIO16 (U2RXD)  │
+  │ RX   ●◄──────┼──── cmd  ───────┤ GPIO17 (U2TXD)  │
+  └──────────────┘                 │                 │
+                                   │ GPIO26 ○  free  │   ← ยังว่าง ใช้ได้
+                                   └─────────────────┘
+   Baud: 256000 8N1 · Frame: 30 bytes (AA FF 03 00 … 55 CC)
+</div>
+
+<h2>3) สถานะของแต่ละ GPIO บน ESP32 ที่ใช้/ไม่ใช้</h2>
+
+<div class="card">
+<table>
+  <thead><tr><th>GPIO</th><th>สถานะ</th><th>หน้าที่ในโปรเจกต์</th></tr></thead>
+  <tbody>
+    <tr><td><span class="pin uart">GPIO16</span></td>
+        <td><span class="badge">USED</span></td>
+        <td>UART2 RX ← LD2450 TX (รับเฟรมเรดาร์ 30 ไบต์ที่ 10 Hz)</td></tr>
+    <tr><td><span class="pin uart">GPIO17</span></td>
+        <td><span class="badge">USED</span></td>
+        <td>UART2 TX → LD2450 RX (ส่งคำสั่งคอนฟิก, ปัจจุบันยังไม่ใช้คำสั่ง)</td></tr>
+    <tr><td><span class="pin free">GPIO26</span></td>
+        <td><span class="badge ok">FREE</span></td>
+        <td><b>ไม่ได้ใช้งานในเฟิร์มแวร์</b> — ต่อเพิ่มได้ (DAC2, ADC2_CH9 ก็ได้)</td></tr>
+    <tr><td><span class="pin free">GPIO25, 27, 32, 33</span></td>
+        <td><span class="badge ok">FREE</span></td>
+        <td>พินว่างทั่วไป ใช้เป็น GPIO/PWM/ADC ได้</td></tr>
+    <tr><td><span class="pin warn">GPIO0, 2, 12, 15</span></td>
+        <td><span class="badge no">STRAPPING</span></td>
+        <td>เป็น strapping pin — ระวังตอน boot, ไม่ควรต่ออุปกรณ์ที่ดึงระดับขณะรีเซ็ต</td></tr>
+    <tr><td><span class="pin danger">GPIO6–11</span></td>
+        <td><span class="badge no">FLASH</span></td>
+        <td>ต่อกับ SPI flash ภายใน — <b>ห้ามใช้</b></td></tr>
+    <tr><td><span class="pin warn">GPIO34–39</span></td>
+        <td><span class="badge">INPUT-ONLY</span></td>
+        <td>อ่านค่าได้อย่างเดียว ไม่มี internal pull-up/down</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>4) ข้อแนะนำเรื่องไฟเลี้ยงและสัญญาณ</h2>
+<div class="grid">
+  <div class="card">
+    <b>ไฟเลี้ยง</b>
+    <ul>
+      <li>LD2450 ระบุ 5V; ESP32 ใช้ 3.3V ภายใน</li>
+      <li>ใช้ขา <code>5V</code>/<code>VIN</code> ของบอร์ด ESP32 จ่ายตรงเข้า LD2450 ได้</li>
+      <li>ถ้าจ่ายจาก USB ของคอม กระแสเพียงพอ (~500 mA)</li>
+      <li>เพิ่ม cap 100 µF + 100 nF ใกล้ขั้ว LD2450 ถ้ามี noise</li>
+    </ul>
+  </div>
+  <div class="card">
+    <b>UART logic level</b>
+    <ul>
+      <li>LD2450 TX เป็น 3.3V logic — ต่อตรงเข้า GPIO16 ได้เลย ไม่ต้อง level-shift</li>
+      <li>ESP32 TX (3.3V) → LD2450 RX อยู่ใน input range ปกติของบอร์ด</li>
+      <li>ความเร็วสูง 256000 baud — สายควรสั้น (&lt; 30 cm) หรือใช้สายชีลด์</li>
+    </ul>
+  </div>
+</div>
+
+<h2>5) อ้างอิงในซอร์ส</h2>
+<div class="card">
+<ul>
+  <li><code>Human_Radar_V2/Human_Radar_V2.ino:44-45</code>
+      — <code>RADAR_RX_PIN = 16</code>, <code>RADAR_TX_PIN = 17</code></li>
+  <li><code>Human_Radar_V2/radar_driver.h:16</code>
+      — <code>radar.begin(16, 17);  // RX=GPIO16, TX=GPIO17</code></li>
+  <li>LD2450 settings: <code>256000 8N1</code>, RX buffer 512B (ESP32-WROOM32 specific)</li>
+</ul>
+</div>
+
+<h2>6) ถ้าจะใช้ GPIO26 ในอนาคต</h2>
+<div class="note">
+  GPIO26 ว่างและปลอดภัย ใช้กับ:
+  <ul>
+    <li>ไฟ LED แสดงสถานะตรวจจับ (active-high, ผ่าน R 220–470 Ω)</li>
+    <li>ขา trigger ของ buzzer / relay</li>
+    <li>DAC2 ออก analog 0–3.3V (เช่นเสียงเตือนจากชิป)</li>
+    <li>ADC2 (ใช้ได้เมื่อไม่เปิด WiFi อ่านพร้อมกัน — ESP32 ADC2 share กับ WiFi)</li>
+  </ul>
+  ตอนใช้งานเพิ่ม <code>pinMode(26, OUTPUT)</code> ใน <code>setup()</code> ของ
+  <code>Human_Radar_V2.ino</code> ได้เลย และอย่าลืมมิเรอร์เข้า <code>firmware/src/main.cpp</code>
+  ตามที่ <code>CLAUDE.md</code> กำหนด
+</div>
+
+<p style="margin-top:32px"><small>Generated for Human_Radar_V2 · ESP32-WROOM32 + HLK-LD2450 · 2026-05-11</small></p>
+
+</main>
+</body>
+</html>

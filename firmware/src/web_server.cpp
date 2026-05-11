@@ -1,5 +1,6 @@
 #include "web_server.h"
 #include "mqtt_client.h"
+#include "alert_pattern.h"
 #include "logger.h"
 
 // Global instance
@@ -44,9 +45,15 @@ void WebRadarServer::setupWiFi() {
         Log::info("Connecting to WiFi: %s", cfg.wifiSSID);
 
         uint32_t startMs = millis();
+        uint32_t lastDot = startMs;
         while (WiFi.status() != WL_CONNECTED) {
-            delay(500);
-            Serial.print(".");
+            // Drive the GPIO26 indicator (1s/1s blink) while we wait.
+            alertPattern.update();
+            delay(10);
+            if (millis() - lastDot >= 500) {
+                Serial.print(".");
+                lastDot = millis();
+            }
             if (millis() - startMs > WIFI_STA_TIMEOUT) {
                 Serial.println();
                 Log::error("WiFi timeout! Falling back to AP mode.");
@@ -116,6 +123,17 @@ void WebRadarServer::setupHTTP() {
     // API: Reset to defaults
     _http.on("/api/reset", HTTP_POST, [this]() {
         handleResetConfig();
+    });
+
+    // API: Alert / LED+Buzzer (GPIO26)
+    _http.on("/api/alert", HTTP_GET, [this]() {
+        handleGetAlert();
+    });
+    _http.on("/api/alert", HTTP_POST, [this]() {
+        handleSaveAlert();
+    });
+    _http.on("/api/alert/test", HTTP_POST, [this]() {
+        handleTestAlert();
     });
 
     // Health check
@@ -256,6 +274,72 @@ void WebRadarServer::handleResetConfig() {
     Log::info("Restarting in 2 seconds...");
     delay(2000);
     ESP.restart();
+}
+
+// ============================================================================
+// API: Alert / LED+Buzzer (GPIO26)
+// ============================================================================
+void WebRadarServer::handleGetAlert() {
+    const auto& a = configManager.getAlertConfig();
+    char json[256];
+    int len = snprintf(json, sizeof(json),
+        "{\"ae\":%d,\"le\":%d,\"bs\":%u,\"bl\":%u,\"bg\":%u,\"db\":%u,\"mr\":%u}",
+        (int)a.alertEnabled, (int)a.ledWifiEnabled,
+        a.beepShortMs, a.beepLongMs, a.beepGapMs, a.debounceMs, a.maxRangeMm);
+    (void)len;
+    _http.send(200, "application/json", json);
+}
+
+void WebRadarServer::handleSaveAlert() {
+    if (!_http.hasArg("plain")) {
+        _http.send(400, "application/json", "{\"ok\":false,\"error\":\"No body\"}");
+        return;
+    }
+    const String body = _http.arg("plain");
+
+    auto getInt = [&](const char* key, int def) -> int {
+        String search = String("\"") + key + "\":";
+        int start = body.indexOf(search);
+        if (start < 0) return def;
+        start += search.length();
+        // skip whitespace
+        while (start < (int)body.length() && (body[start] == ' ' || body[start] == '\t')) start++;
+        return body.substring(start).toInt();
+    };
+
+    AlertPattern::Config a = configManager.getAlertConfig();
+    a.alertEnabled   = getInt("ae", a.alertEnabled  ? 1 : 0) != 0;
+    a.ledWifiEnabled = getInt("le", a.ledWifiEnabled ? 1 : 0) != 0;
+    a.beepShortMs    = (uint16_t)constrain(getInt("bs", a.beepShortMs), 50, 5000);
+    a.beepLongMs     = (uint16_t)constrain(getInt("bl", a.beepLongMs),  100, 10000);
+    a.beepGapMs      = (uint16_t)constrain(getInt("bg", a.beepGapMs),   50, 5000);
+    a.debounceMs     = (uint16_t)constrain(getInt("db", a.debounceMs),  0,  10000);
+    a.maxRangeMm     = (uint16_t)constrain(getInt("mr", a.maxRangeMm),  0,  20000);
+
+    configManager.setAlertConfig(a);
+    alertPattern.setConfig(a);
+
+    _http.send(200, "application/json", "{\"ok\":true}");
+}
+
+void WebRadarServer::handleTestAlert() {
+    int shorts = 1;
+    int useLong = 0;
+    if (_http.hasArg("plain")) {
+        const String body = _http.arg("plain");
+        auto getInt = [&](const char* key, int def) -> int {
+            String search = String("\"") + key + "\":";
+            int start = body.indexOf(search);
+            if (start < 0) return def;
+            start += search.length();
+            while (start < (int)body.length() && (body[start] == ' ' || body[start] == '\t')) start++;
+            return body.substring(start).toInt();
+        };
+        shorts  = constrain(getInt("count", 1), 0, 10);
+        useLong = getInt("long", 0);
+    }
+    alertPattern.triggerTest((uint8_t)shorts, useLong != 0);
+    _http.send(200, "application/json", "{\"ok\":true}");
 }
 
 // ============================================================================

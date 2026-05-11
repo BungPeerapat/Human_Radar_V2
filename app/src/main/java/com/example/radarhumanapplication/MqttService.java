@@ -5,6 +5,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import com.example.radarhumanapplication.alerts.AlertPatternConfig;
+import com.example.radarhumanapplication.alerts.AlertPatternPlayer;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -48,6 +50,7 @@ public class MqttService {
     private String password = "";
     private boolean connected = false;
     private Context appContext;
+    private AlertPatternPlayer alertPlayer;
 
     // Listeners
     public interface ConnectionListener {
@@ -127,6 +130,19 @@ public class MqttService {
     public void attachContext(Context ctx) {
         if (this.appContext == null && ctx != null) {
             this.appContext = ctx.getApplicationContext();
+        }
+        if (this.alertPlayer == null && this.appContext != null) {
+            this.alertPlayer = new AlertPatternPlayer(this.appContext);
+        }
+    }
+
+    /** Get the singleton alert pattern player. Must call {@link #attachContext} first. */
+    public AlertPatternPlayer getAlertPlayer() { return alertPlayer; }
+
+    /** Convenience: push new alert config into the player (called by ConfigFragment). */
+    public void updateAlertConfig(AlertPatternConfig cfg) {
+        if (alertPlayer != null && cfg != null) {
+            alertPlayer.setConfig(cfg);
         }
     }
 
@@ -251,6 +267,12 @@ public class MqttService {
             JsonObject data = gson.fromJson(json, JsonObject.class);
             lastTargetData = data;
             mainHandler.post(() -> {
+                // Feed the alert pattern player (independent of UI listeners)
+                if (alertPlayer != null) {
+                    AlertPatternConfig acfg = alertPlayer.getConfig();
+                    int active = AlertPatternPlayer.countActive(data, acfg.maxRangeMm);
+                    alertPlayer.onTargetCount(active);
+                }
                 for (TargetListener l : targetListeners) l.onTargetsReceived(data);
             });
         } catch (Exception e) {

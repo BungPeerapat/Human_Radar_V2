@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include <Preferences.h>
 
+#include "alert_pattern.h"
+
 // ============================================================================
 // Firmware Version
 // ============================================================================
@@ -60,6 +62,9 @@ struct DeviceConfig {
 
     // Detection Zones (3 zones, LD2450 supports hardware zone filtering)
     DetectionZone zones[3];
+
+    // Alert / LED+Buzzer (GPIO26)
+    AlertPattern::Config alert;
 };
 
 class ConfigManager {
@@ -79,6 +84,10 @@ public:
     void setMultiTargetMode(uint8_t mode);
     void setSensitivity(uint8_t level);
     void setZone(uint8_t idx, bool enabled, int16_t x1, int16_t y1, int16_t x2, int16_t y2);
+
+    // Alert config (LED+buzzer on GPIO26)
+    const AlertPattern::Config& getAlertConfig() const { return _cfg.alert; }
+    void setAlertConfig(const AlertPattern::Config& a);
 
     void resetToDefaults();
 
