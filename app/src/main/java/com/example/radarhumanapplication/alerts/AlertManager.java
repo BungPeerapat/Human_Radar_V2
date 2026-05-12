@@ -159,13 +159,22 @@ public class AlertManager implements MqttService.TargetListener {
         synchronized (rules) {
             snapshot = new ArrayList<>(rules);
         }
-        if (!data.has("targets")) return;
-        JsonArray targets;
+        // MQTT payload schema (see firmware mqtt_client.cpp::publishFrame):
+        //   {"t":[{x,y,s,d,a,p}, ...], "fc":..., "ec":...}
+        // Older versions of this code looked for "targets"/"present", which never matched
+        // and silently disabled all distance rules. Accept both for backward compat with any
+        // future schema change, but the canonical keys are "t" and "p".
+        JsonArray targets = null;
         try {
-            targets = data.getAsJsonArray("targets");
+            if (data.has("t")) {
+                targets = data.getAsJsonArray("t");
+            } else if (data.has("targets")) {
+                targets = data.getAsJsonArray("targets");
+            }
         } catch (Exception e) {
             return;
         }
+        if (targets == null) return;
 
         for (AlertRule rule : snapshot) {
             if (!rule.enabled) continue;
@@ -185,7 +194,15 @@ public class AlertManager implements MqttService.TargetListener {
     }
 
     private void evaluateRuleAgainst(AlertRule rule, int index, JsonObject target) {
-        boolean present = target.has("present") && target.get("present").getAsBoolean();
+        // Canonical key is "p"; fall back to "present" if some future schema reverts.
+        boolean present;
+        if (target.has("p")) {
+            present = target.get("p").getAsBoolean();
+        } else if (target.has("present")) {
+            present = target.get("present").getAsBoolean();
+        } else {
+            present = false;
+        }
         if (!present) {
             unsetFired(rule.id, index);
             return;

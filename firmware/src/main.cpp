@@ -35,6 +35,46 @@ static uint8_t countActiveTargets(const RadarFrame& frame, uint16_t maxRangeMm) 
     return n;
 }
 
+// Drop "ghost" targets the LD2450 keeps reporting at the exact last (x,y) after
+// the real person has walked out of view. See Human_Radar_V2.ino for the long
+// explanation.
+static constexpr uint32_t GHOST_TIMEOUT_MS = 2000;
+
+static void filterGhostTargets(RadarFrame& frame) {
+    static int16_t  lastX[RADAR_MAX_TARGETS]      = {0};
+    static int16_t  lastY[RADAR_MAX_TARGETS]      = {0};
+    static uint32_t lastChange[RADAR_MAX_TARGETS] = {0};
+    static bool     hadTarget[RADAR_MAX_TARGETS]  = {false};
+
+    const uint32_t now = millis();
+    for (uint8_t i = 0; i < RADAR_MAX_TARGETS; i++) {
+        RadarTarget& t = frame.targets[i];
+        if (!t.present) {
+            lastX[i] = 0;
+            lastY[i] = 0;
+            lastChange[i] = 0;
+            hadTarget[i] = false;
+            continue;
+        }
+        if (!hadTarget[i] || t.x != lastX[i] || t.y != lastY[i]) {
+            lastX[i] = t.x;
+            lastY[i] = t.y;
+            lastChange[i] = now;
+            hadTarget[i] = true;
+        } else if (now - lastChange[i] > GHOST_TIMEOUT_MS) {
+            t.present  = false;
+            t.x        = 0;
+            t.y        = 0;
+            t.speed    = 0;
+            t.distance = 0;
+            t.angle    = 0.0f;
+            if (frame.targetCount > 0) frame.targetCount--;
+            hadTarget[i] = false;
+            lastChange[i] = 0;
+        }
+    }
+}
+
 // ============================================================================
 // Setup
 // ============================================================================
@@ -105,7 +145,8 @@ void loop() {
     monitorWifi();
 
     if (radar.update()) {
-        const RadarFrame& frame = radar.getLatestFrame();
+        RadarFrame frame = radar.getLatestFrame();
+        filterGhostTargets(frame);
         webServer.broadcastFrame(frame, radar.getFrameCount(), radar.getErrorCount());
         mqttClient.publishFrame(frame, radar.getFrameCount(), radar.getErrorCount());
 
