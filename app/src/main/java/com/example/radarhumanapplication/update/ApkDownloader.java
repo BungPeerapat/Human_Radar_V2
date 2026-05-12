@@ -47,12 +47,16 @@ public class ApkDownloader {
 
     private long currentDownloadId = -1;
     private BroadcastReceiver completionReceiver;
+    private volatile boolean stopped = false;
+    private int lastReportedPct = -1;
 
     public ApkDownloader(Context ctx) {
         this.appContext = ctx.getApplicationContext();
     }
 
     public void start(UpdateInfo info, Callback cb) {
+        stopped = false;
+        lastReportedPct = -1;
         File destDir = appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
         if (destDir == null) {
             cb.onError("External files dir unavailable");
@@ -141,27 +145,41 @@ public class ApkDownloader {
         Runnable poll = new Runnable() {
             @Override
             public void run() {
-                if (currentDownloadId == -1 || completionReceiver == null) return;
-                DownloadManager.Query q = new DownloadManager.Query().setFilterById(currentDownloadId);
-                try (Cursor c = dm.query(q)) {
-                    if (c != null && c.moveToFirst()) {
-                        int statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
-                        int totalCol = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
-                        int doneCol = c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR);
-                        int status = statusCol >= 0 ? c.getInt(statusCol) : 0;
-                        long total = totalCol >= 0 ? c.getLong(totalCol) : 0;
-                        long done = doneCol >= 0 ? c.getLong(doneCol) : 0;
-                        if (total > 0) {
-                            int pct = (int) (done * 100 / total);
-                            cb.onProgress(pct);
-                        }
-                        if (status == DownloadManager.STATUS_SUCCESSFUL
-                                || status == DownloadManager.STATUS_FAILED) {
-                            return;
+                if (stopped || currentDownloadId == -1 || completionReceiver == null) return;
+                try {
+                    DownloadManager.Query q = new DownloadManager.Query().setFilterById(currentDownloadId);
+                    try (Cursor c = dm.query(q)) {
+                        if (c != null && c.moveToFirst()) {
+                            int statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
+                            int totalCol = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
+                            int doneCol = c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR);
+                            int status = statusCol >= 0 ? c.getInt(statusCol) : 0;
+                            long total = totalCol >= 0 ? c.getLong(totalCol) : 0;
+                            long done = doneCol >= 0 ? c.getLong(doneCol) : 0;
+                            if (total > 0) {
+                                int pct = (int) (done * 100 / total);
+                                if (pct != lastReportedPct) {
+                                    lastReportedPct = pct;
+                                    try {
+                                        cb.onProgress(pct);
+                                    } catch (Exception e) {
+                                        // Never let a UI callback failure kill the polling loop
+                                        Log.w(TAG, "onProgress callback threw", e);
+                                    }
+                                }
+                            }
+                            if (status == DownloadManager.STATUS_SUCCESSFUL
+                                    || status == DownloadManager.STATUS_FAILED) {
+                                return;
+                            }
                         }
                     }
+                } catch (Exception e) {
+                    Log.w(TAG, "Progress poll failed", e);
                 }
-                main.postDelayed(this, 500);
+                if (!stopped) {
+                    main.postDelayed(this, 500);
+                }
             }
         };
         main.postDelayed(poll, 500);
@@ -181,9 +199,14 @@ public class ApkDownloader {
     }
 
     public void cancel() {
+        stopped = true;
         if (currentDownloadId != -1) {
             DownloadManager dm = (DownloadManager) appContext.getSystemService(Context.DOWNLOAD_SERVICE);
-            if (dm != null) dm.remove(currentDownloadId);
+            if (dm != null) {
+                try { dm.remove(currentDownloadId); } catch (Exception e) {
+                    Log.w(TAG, "dm.remove failed", e);
+                }
+            }
             currentDownloadId = -1;
         }
         unregisterCompletion();
