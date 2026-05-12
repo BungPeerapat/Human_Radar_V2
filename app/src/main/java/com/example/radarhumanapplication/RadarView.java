@@ -182,6 +182,25 @@ public class RadarView extends View {
         return bmp;
     }
 
+    /** Drop every target and clear all trails. Used when the device goes offline or
+     *  no frame has arrived for a while — prevents the radar from showing stale
+     *  positions that no longer correspond to anything in the real world. */
+    public void clearTargets() {
+        for (int i = 0; i < 3; i++) {
+            targets[i].present = false;
+            targets[i].x = 0;
+            targets[i].y = 0;
+            targets[i].speed = 0;
+            targets[i].distance = 0;
+            targets[i].angle = 0;
+            if (trails[i] != null) trails[i].clear();
+        }
+        if (infoListener != null) {
+            infoListener.onInfoUpdated(targets, frameCount, errorCount, 0);
+        }
+        invalidate();
+    }
+
     public void updateTargets(JsonObject data) {
         // FPS tracking
         long now = System.currentTimeMillis();

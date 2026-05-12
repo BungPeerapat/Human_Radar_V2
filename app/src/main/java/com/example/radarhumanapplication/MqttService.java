@@ -54,7 +54,8 @@ public class MqttService {
     private String deviceName = "HumanRadar";
     private String username = "";
     private String password = "";
-    private boolean connected = false;
+    /** Written from HiveMQ callback threads, read from main thread — must be volatile. */
+    private volatile boolean connected = false;
     private Context appContext;
     private AlertPatternPlayer alertPlayer;
     private DeviceStatusAlertManager deviceStatusAlerts;
@@ -205,6 +206,25 @@ public class MqttService {
      *  doesn't see live and replayed frames at the same time. */
     public void setLiveTargetMute(boolean muted) { this.liveTargetMuted = muted; }
     public boolean isLiveTargetMuted() { return liveTargetMuted; }
+
+    /**
+     * Public dispatch hook used by {@link com.example.radarhumanapplication.recording.SessionReplayer}
+     * to feed replayed frames into the same fan-out as live MQTT. Always runs on the main
+     * thread (callers must marshal); does NOT touch {@link #liveTargetMuted} so the caller
+     * can choose to mute live and still deliver replay frames.
+     */
+    public void dispatchTargetsToListeners(JsonObject data) {
+        if (data == null) return;
+        lastTargetData = data;
+        if (alertPlayer != null) {
+            AlertPatternConfig acfg = alertPlayer.getConfig();
+            int active = AlertPatternPlayer.countActive(data, acfg.maxRangeMm);
+            alertPlayer.onTargetCount(active);
+        }
+        for (TargetListener l : targetListeners) {
+            try { l.onTargetsReceived(data); } catch (Exception ignored) {}
+        }
+    }
 
     /** Convenience: push new alert config into the player (called by ConfigFragment). */
     public void updateAlertConfig(AlertPatternConfig cfg) {

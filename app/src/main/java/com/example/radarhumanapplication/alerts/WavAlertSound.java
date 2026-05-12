@@ -73,8 +73,11 @@ public class WavAlertSound implements AlertSoundSource {
             return;
         }
         try {
-            if (mp.isPlaying()) mp.seekTo(0);
-            else                mp.start();
+            // Always seek to 0 before starting — after the clip completes,
+            // isPlaying() returns false but the cursor is at end-of-file,
+            // so a plain start() plays nothing.
+            mp.seekTo(0);
+            mp.start();
         } catch (IllegalStateException e) {
             Log.w(TAG, label + " play failed", e);
         }

@@ -474,7 +474,9 @@ public class DashboardFragment extends Fragment
                 if (SessionRecorder.getInstance().delete(f)) {
                     files.remove(position);
                     notifyItemRemoved(position);
-                    notifyItemRangeChanged(position, files.size() - position);
+                    // files.size() is already decremented by remove(); use getItemCount()
+                    // so the range matches the actual remaining items below position.
+                    notifyItemRangeChanged(position, getItemCount() - position);
                 } else {
                     Toast.makeText(requireContext(), "Delete failed", Toast.LENGTH_SHORT).show();
                 }

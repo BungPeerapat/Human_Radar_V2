@@ -71,7 +71,18 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
                 if (pendingRule != null) {
                     if (uri != null) {
                         pendingRule.soundUri = uri.toString();
-                        pendingRule.soundLabel = RingtoneManager.getRingtone(requireContext(), uri).getTitle(requireContext());
+                        // RingtoneManager.getRingtone() can return null if the picked
+                        // URI points to a clip that has been deleted or lives on
+                        // unmounted storage — guard before .getTitle() to avoid NPE.
+                        android.media.Ringtone rt =
+                                RingtoneManager.getRingtone(requireContext(), uri);
+                        if (rt != null) {
+                            pendingRule.soundLabel = rt.getTitle(requireContext());
+                        } else {
+                            String tail = uri.getLastPathSegment();
+                            pendingRule.soundLabel = (tail != null && !tail.isEmpty())
+                                    ? tail : "(unknown)";
+                        }
                     } else {
                         pendingRule.soundUri = null;
                         pendingRule.soundLabel = "(silent)";

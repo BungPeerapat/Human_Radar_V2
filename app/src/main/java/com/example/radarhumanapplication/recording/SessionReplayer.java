@@ -9,7 +9,6 @@ import com.google.gson.JsonObject;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -181,9 +180,9 @@ public class SessionReplayer {
     private void scheduleNext() {
         if (!replaying || paused) return;
         if (index >= frames.size()) {
-            replaying = false;
-            currentFileName = "";
-            notifyState();
+            // Natural end of playback — go through stop() so the live-MQTT mute is
+            // released and listeners receive a final state notification.
+            stop();
             return;
         }
         RecordingFile.Frame frame = frames.get(index);
@@ -199,8 +198,6 @@ public class SessionReplayer {
         synchronized (this) {
             if (!replaying || paused) return;
             if (index >= frames.size()) {
-                replaying = false;
-                currentFileName = "";
                 justFinished = true;
                 frame = null;
             } else {
@@ -209,7 +206,8 @@ public class SessionReplayer {
             }
         }
         if (justFinished) {
-            notifyState();
+            // Funnel through stop() so live-MQTT mute is released cleanly.
+            stop();
             return;
         }
         try {
@@ -242,28 +240,15 @@ public class SessionReplayer {
     }
 
     /**
-     * Deliver to every {@link MqttService.TargetListener} registered on the singleton. Uses
-     * reflection because MqttService does not expose a dispatch API. If reflection fails, falls
-     * back to a no-op (with logged warning).
+     * Deliver to every {@link MqttService.TargetListener} registered on the singleton.
+     * Uses the public dispatch hook so the call survives ProGuard/R8 obfuscation and
+     * benefits from any future fan-out improvements in MqttService.
      */
-    @SuppressWarnings("unchecked")
     private void dispatch(JsonObject data) {
         try {
-            MqttService svc = MqttService.getInstance();
-            Field f = MqttService.class.getDeclaredField("targetListeners");
-            f.setAccessible(true);
-            Object value = f.get(svc);
-            if (value instanceof Iterable) {
-                for (Object l : (Iterable<Object>) value) {
-                    if (l instanceof MqttService.TargetListener) {
-                        try {
-                            ((MqttService.TargetListener) l).onTargetsReceived(data);
-                        } catch (Exception ignored) {}
-                    }
-                }
-            }
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            Log.w(TAG, "Cannot dispatch replay frames (reflection failed): " + e.getMessage());
+            MqttService.getInstance().dispatchTargetsToListeners(data);
+        } catch (Exception e) {
+            Log.w(TAG, "Replay dispatch failed: " + e.getMessage());
         }
     }
 }

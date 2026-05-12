@@ -10,6 +10,8 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.MediaStore;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -36,13 +38,34 @@ import java.io.OutputStream;
 
 public class RadarFragment extends Fragment
         implements MqttService.TargetListener, MqttService.ConnectionListener,
+                   MqttService.StatusListener,
                    AlertManager.RulesChangedListener, SessionReplayer.StateListener {
+
+    /** No-frame timeout — if MQTT is still connected but no target frame
+     *  arrives for this long, treat the device as silent and clear the canvas. */
+    private static final long STALE_FRAME_MS = 3000;
 
     private static final String TAG = "RadarFragment";
 
     private RadarView radarView;
     private TextView tvTarget1, tvTarget2, tvTarget3;
     private TextView tvStats, tvRadarStatus;
+    /** Last device status from MQTT humanradar/<name>/status; "" until first message. */
+    private String deviceStatus = "";
+    /** Millis of the last frame applied to the radar; 0 if never. */
+    private long lastFrameMs = 0;
+    private final Handler staleHandler = new Handler(Looper.getMainLooper());
+    private final Runnable staleCheck = new Runnable() {
+        @Override public void run() {
+            if (!isAdded()) return;
+            if (lastFrameMs > 0
+                    && System.currentTimeMillis() - lastFrameMs > STALE_FRAME_MS) {
+                radarView.clearTargets();
+                updateConnectionStatus();   // may flip text to STALE
+            }
+            staleHandler.postDelayed(this, 1000);
+        }
+    };
     private View statusBar, infoPanel;
     private View uxOverlay;
     private View replayBadge;
@@ -111,11 +134,14 @@ public class RadarFragment extends Fragment
         applyLockOrientation(uiPrefs.isLockOrientation());
         applyNightMode(uiPrefs.isNightMode());
 
+        deviceStatus = mqtt.getDeviceStatus();
         updateConnectionStatus();
         applyAlertDistances();
         mqtt.addTargetListener(this);
         mqtt.addConnectionListener(this);
+        mqtt.addStatusListener(this);
         AlertManager.getInstance().addRulesChangedListener(this);
+        staleHandler.postDelayed(staleCheck, 1000);
 
         // Replay badge — sync initial state in case a replay is already running.
         SessionReplayer rep = SessionReplayer.getInstance();
@@ -216,15 +242,19 @@ public class RadarFragment extends Fragment
         }
         mqtt.removeTargetListener(this);
         mqtt.removeConnectionListener(this);
+        mqtt.removeStatusListener(this);
         AlertManager.getInstance().removeRulesChangedListener(this);
         SessionReplayer.getInstance().removeStateListener(this);
+        staleHandler.removeCallbacks(staleCheck);
         super.onDestroyView();
     }
 
     @Override
     public void onTargetsReceived(JsonObject data) {
         if (!isAdded()) return;
+        lastFrameMs = System.currentTimeMillis();
         radarView.updateTargets(data);
+        updateConnectionStatus();
     }
 
     @Override
@@ -236,17 +266,43 @@ public class RadarFragment extends Fragment
     @Override
     public void onDisconnected(String reason) {
         if (!isAdded()) return;
+        // MQTT broker went away — every target on the canvas is stale.
+        deviceStatus = "";
+        radarView.clearTargets();
+        updateConnectionStatus();
+    }
+
+    @Override
+    public void onDeviceStatus(String status) {
+        if (!isAdded()) return;
+        this.deviceStatus = status == null ? "" : status.trim();
+        if ("offline".equalsIgnoreCase(this.deviceStatus)) {
+            // ESP32 published its LWT — drop any frozen targets from the canvas.
+            radarView.clearTargets();
+            lastFrameMs = 0;
+        }
         updateConnectionStatus();
     }
 
     private void updateConnectionStatus() {
-        if (mqtt.isConnected()) {
-            tvRadarStatus.setText("CONNECTED");
-            tvRadarStatus.setTextColor(getColor(R.color.radar_green));
-        } else {
+        if (!mqtt.isConnected()) {
             tvRadarStatus.setText("DISCONNECTED");
             tvRadarStatus.setTextColor(getColor(R.color.radar_red));
+            return;
         }
+        if ("offline".equalsIgnoreCase(deviceStatus)) {
+            tvRadarStatus.setText("DEVICE OFFLINE");
+            tvRadarStatus.setTextColor(getColor(R.color.radar_red));
+            return;
+        }
+        if (lastFrameMs > 0
+                && System.currentTimeMillis() - lastFrameMs > STALE_FRAME_MS) {
+            tvRadarStatus.setText("NO DATA");
+            tvRadarStatus.setTextColor(getColor(R.color.radar_yellow));
+            return;
+        }
+        tvRadarStatus.setText("CONNECTED");
+        tvRadarStatus.setTextColor(getColor(R.color.radar_green));
     }
 
     private void updateTargetInfo(RadarView.TargetData[] targets) {
