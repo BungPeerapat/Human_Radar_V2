@@ -28,7 +28,7 @@
  *
  *  Usage:
  *    1. Upload this sketch
- *    2. Connect phone/PC to WiFi "HumanRadar" (password: radar1234)
+ *    2. Connect phone/PC to WiFi "HumanRadar" (open — no password by default)
  *    3. Open browser -> http://192.168.4.1
  *    4. See realtime radar visualization!
  * ============================================================================

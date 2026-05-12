@@ -64,7 +64,7 @@ Data flow: `LD2450 → UART2 → RadarDriver (state machine) → RadarParser →
 | `web_settings.h` | Settings page with WiFi mode, MQTT config, toggle switch (PROGMEM HTML/JS) |
 | `mqtt_client` | Multi-protocol MQTT (ws/wss/tcp/tls) via PubSubClient + WSMqttClient bridge |
 | `logger.h` | Serial debug output (header-only) |
-| `wifi_config.h` | Compile-time WiFi defaults (AP: HumanRadar/radar1234) |
+| `wifi_config.h` | Compile-time WiFi defaults (AP SSID: HumanRadar, open — no password) |
 
 ### HLK-LD2450 Protocol Details
 - Baud: 256000, UART2 (GPIO16 RX, GPIO17 TX)

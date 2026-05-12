@@ -13,9 +13,12 @@
 // ============================================================================
 
 // --- Access Point Mode (default) ---
+// Factory default is an OPEN network so a brand-new device is reachable from any
+// phone without needing to remember a password. Switch to STA mode + your home
+// WiFi via the /settings page once the device is online.
 #define USE_AP_MODE         true
 #define WIFI_AP_SSID         "HumanRadar"
-#define WIFI_AP_PASS         "radar1234"    // min 8 chars, or "" for open
+#define WIFI_AP_PASS         ""             // empty = open network (no password)
 #define WIFI_AP_CHANNEL      1
 #define WIFI_AP_MAX_CONN     4
 
