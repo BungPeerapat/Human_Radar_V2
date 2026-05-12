@@ -7,6 +7,7 @@ import android.text.format.Formatter;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -76,7 +77,11 @@ public class UpdateDialog extends DialogFragment {
         AlertDialog.Builder b = new AlertDialog.Builder(requireContext())
                 .setTitle(info.mandatory ? "Required update" : "Update available")
                 .setMessage(body)
-                .setPositiveButton("Update", (d, w) -> startDownload());
+                // null listener so the OnShowListener below installs our own click
+                // handler — without that, AlertDialog auto-dismisses the dialog on
+                // click, which kills the host DialogFragment and any child
+                // progress dialog we just created (bug seen in <= v1.0.20).
+                .setPositiveButton("Update", null);
 
         if (!info.mandatory) {
             b.setNegativeButton("Later", (d, w) -> dismissSafe());
@@ -90,8 +95,14 @@ public class UpdateDialog extends DialogFragment {
         } else {
             setCancelable(false);
         }
-        Dialog dialog = b.create();
+        AlertDialog dialog = b.create();
         dialog.setCanceledOnTouchOutside(!info.mandatory);
+        dialog.setOnShowListener(d -> {
+            Button positive = dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            if (positive != null) {
+                positive.setOnClickListener(v -> startDownload());
+            }
+        });
         return dialog;
     }
 
@@ -102,6 +113,10 @@ public class UpdateDialog extends DialogFragment {
                 showPermissionExplainer();
                 return;
             }
+            // Hide (don't dismiss) the release-notes dialog while the progress
+            // dialog runs — keeps the Fragment alive so callbacks can update UI.
+            Dialog host = getDialog();
+            if (host != null && host.isShowing()) host.hide();
             beginDownload();
         } catch (Exception e) {
             Log.e(TAG, "startDownload failed", e);
@@ -183,6 +198,9 @@ public class UpdateDialog extends DialogFragment {
             public void onError(String message) {
                 dismissProgress();
                 if (!isAdded()) return;
+                // Bring the release-notes dialog back so the user can retry / cancel.
+                Dialog host = getDialog();
+                if (host != null && !host.isShowing()) host.show();
                 try {
                     new AlertDialog.Builder(requireContext())
                             .setTitle("Download failed")
