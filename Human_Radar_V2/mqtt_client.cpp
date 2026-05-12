@@ -140,11 +140,32 @@ void MqttRadarClient::buildTopics() {
     const char* name = strlen(cfg.deviceName) > 0 ? cfg.deviceName : "HumanRadar";
     snprintf(_topicTargets,   sizeof(_topicTargets),   "humanradar/%s/targets",    name);
     snprintf(_topicStatus,    sizeof(_topicStatus),    "humanradar/%s/status",     name);
+    snprintf(_topicInfo,      sizeof(_topicInfo),      "humanradar/%s/info",       name);
     snprintf(_topicLog,       sizeof(_topicLog),       "humanradar/%s/log",        name);
     snprintf(_topicConfig,    sizeof(_topicConfig),    "humanradar/%s/config",     name);
     snprintf(_topicConfigAck, sizeof(_topicConfigAck), "humanradar/%s/config/ack", name);
     snprintf(_topicCmd,       sizeof(_topicCmd),       "humanradar/%s/cmd",        name);
     snprintf(_topicCmdAck,    sizeof(_topicCmdAck),    "humanradar/%s/cmd/ack",    name);
+}
+
+// Publish a retained discovery message so the app's device picker can find
+// the ESP32's HTTP IP without the user having to type 192.168.x.x manually.
+// Payload is {"ip":"…","fw":"…","name":"…","mac":"…"}.
+void MqttRadarClient::publishInfo() {
+    const DeviceConfig& cfg = configManager.get();
+    String ip = WiFi.getMode() == WIFI_AP
+            ? WiFi.softAPIP().toString()
+            : WiFi.localIP().toString();
+    char payload[256];
+    int n = snprintf(payload, sizeof(payload),
+                     "{\"ip\":\"%s\",\"fw\":\"%s\",\"name\":\"%s\",\"mac\":\"%s\"}",
+                     ip.c_str(),
+                     FW_VERSION,
+                     strlen(cfg.deviceName) > 0 ? cfg.deviceName : "HumanRadar",
+                     WiFi.macAddress().c_str());
+    (void)n;
+    _mqtt.publish(_topicInfo, (const uint8_t*)payload, strlen(payload), true);
+    Log::info(TAG_MQTT, "Published info: %s", payload);
 }
 
 // ============================================================================
@@ -201,6 +222,7 @@ bool MqttRadarClient::tryConnect() {
     if (ok) {
         Log::info(TAG_MQTT, "Connected! (%s)", getProtoText());
         _mqtt.publish(_topicStatus, "online", true);
+        publishInfo();
         subscribeAll();
         _wasConnected = true;
 

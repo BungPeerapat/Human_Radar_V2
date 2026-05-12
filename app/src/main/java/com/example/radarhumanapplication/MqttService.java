@@ -98,6 +98,10 @@ public class MqttService {
         public final String deviceName;
         public String status;          // "online" / "offline" / raw payload
         public long   lastSeenMs;
+        /** Device's HTTP IP, populated from the humanradar/{name}/info retained message. */
+        public String ip = "";
+        public String fw = "";
+        public String mac = "";
 
         public DiscoveredDevice(String deviceName, String status, long lastSeenMs) {
             this.deviceName = deviceName;
@@ -314,6 +318,50 @@ public class MqttService {
         // Wildcard discovery — picks up every ESP32 that publishes humanradar/<name>/status
         // on the same broker. Used by the device picker to show what's actually online.
         subscribe("humanradar/+/status", this::handleDiscoveryStatus);
+        // Retained "info" message carries the device's HTTP IP + firmware version so the
+        // picker can show it without the user having to type 192.168.x.x by hand.
+        subscribe("humanradar/+/info", this::handleDiscoveryInfo);
+    }
+
+    private void handleDiscoveryInfo(Mqtt3Publish publish) {
+        try {
+            String topicStr = publish.getTopic().toString();
+            String[] parts = topicStr.split("/");
+            if (parts.length < 3) return;
+            String devName = parts[1];
+            String body = new String(publish.getPayloadAsBytes(), StandardCharsets.UTF_8);
+            JsonObject obj;
+            try {
+                obj = gson.fromJson(body, JsonObject.class);
+            } catch (Exception parseErr) {
+                Log.w(TAG, "info payload not JSON for " + devName + ": " + body);
+                return;
+            }
+            if (obj == null) return;
+            String ip  = obj.has("ip")  ? obj.get("ip").getAsString()  : "";
+            String fw  = obj.has("fw")  ? obj.get("fw").getAsString()  : "";
+            String mac = obj.has("mac") ? obj.get("mac").getAsString() : "";
+            long now = System.currentTimeMillis();
+            DiscoveredDevice existing = discoveredDevices.get(devName);
+            if (existing == null) {
+                existing = new DiscoveredDevice(devName, "online", now);
+                discoveredDevices.put(devName, existing);
+            }
+            existing.ip  = ip;
+            existing.fw  = fw;
+            existing.mac = mac;
+            existing.lastSeenMs = now;
+            Log.d(TAG, "Discovery info " + devName + " ip=" + ip + " fw=" + fw);
+            final DiscoveredDevice forCb = existing;
+            mainHandler.post(() -> {
+                for (DiscoveryListener l : discoveryListeners) {
+                    try { l.onDeviceDiscovered(devName, forCb.status, forCb.lastSeenMs); }
+                    catch (Exception ignored) {}
+                }
+            });
+        } catch (Exception e) {
+            Log.w(TAG, "Discovery info parse failed", e);
+        }
     }
 
     private void handleDiscoveryStatus(Mqtt3Publish publish) {

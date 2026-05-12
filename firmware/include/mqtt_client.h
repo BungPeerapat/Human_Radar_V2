@@ -24,7 +24,7 @@ enum MqttProto : uint8_t {
 // MQTT Configuration
 // ============================================================================
 static constexpr uint32_t MQTT_RECONNECT_INTERVAL = 5000;
-static constexpr uint16_t MQTT_BUFFER_SIZE        = 1024;
+static constexpr uint16_t MQTT_BUFFER_SIZE        = 1024;   // increased for config ACK
 static constexpr uint32_t MQTT_WS_CONNECT_TIMEOUT = 8000;
 static constexpr uint16_t MQTT_WS_RINGBUF_SIZE    = 1024;
 
@@ -110,6 +110,7 @@ private:
 
     char _topicTargets[96];
     char _topicStatus[96];
+    char _topicInfo[96];
     char _topicLog[96];
     char _topicConfig[96];
     char _topicConfigAck[96];
@@ -117,6 +118,7 @@ private:
     char _topicCmdAck[96];
 
     void buildTopics();
+    void publishInfo();
     void setupTransport();
     bool tryConnect();
     void subscribeAll();

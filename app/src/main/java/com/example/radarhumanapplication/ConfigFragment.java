@@ -55,6 +55,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private Slider alertVolume;
     private TextView alertVolumeLabel, alertStatus;
     private MaterialButton btnAlertFetch, btnAlertPush, btnAlertTestLocal, btnAlertTestRemote;
+    private MaterialButton btnPickDeviceIp;
     private MaterialButton btnPickShort, btnPickLong;
     private TextView alertShortUriLabel, alertLongUriLabel;
     private String pickedShortUri = "";
@@ -639,6 +640,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnAlertTestRemote  = v.findViewById(R.id.btn_alert_test_remote);
         btnPickShort        = v.findViewById(R.id.btn_pick_short);
         btnPickLong         = v.findViewById(R.id.btn_pick_long);
+        btnPickDeviceIp     = v.findViewById(R.id.btn_pick_device_ip);
         alertShortUriLabel  = v.findViewById(R.id.alert_short_uri_label);
         alertLongUriLabel   = v.findViewById(R.id.alert_long_uri_label);
 
@@ -655,6 +657,21 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnAlertTestRemote.setOnClickListener(view -> onAlertTestRemote());
         btnPickShort.setOnClickListener(view -> launchPicker(true));
         btnPickLong.setOnClickListener(view -> launchPicker(false));
+        btnPickDeviceIp.setOnClickListener(view -> onPickDeviceIp());
+    }
+
+    /** Show the picker; fill the IP field from the chosen profile / MQTT discovery. */
+    private void onPickDeviceIp() {
+        DevicePickerDialog.show(requireContext(), "Pick a device for the IP field", p -> {
+            if (p.espHttpIp != null && !p.espHttpIp.isEmpty()) {
+                alertDeviceIp.setText(p.espHttpIp);
+                setAlertStatus("IP set to " + p.espHttpIp + " (" + p.name + ")", false);
+            } else {
+                setAlertStatus("Device \"" + p.name + "\" has not announced its IP yet."
+                        + " Wait for it to come online via MQTT, or type the IP manually.",
+                        true);
+            }
+        });
     }
 
     private void launchPicker(boolean isShort) {

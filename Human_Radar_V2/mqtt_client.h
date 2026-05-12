@@ -110,6 +110,7 @@ private:
 
     char _topicTargets[96];
     char _topicStatus[96];
+    char _topicInfo[96];
     char _topicLog[96];
     char _topicConfig[96];
     char _topicConfigAck[96];
@@ -117,6 +118,7 @@ private:
     char _topicCmdAck[96];
 
     void buildTopics();
+    void publishInfo();
     void setupTransport();
     bool tryConnect();
     void subscribeAll();
