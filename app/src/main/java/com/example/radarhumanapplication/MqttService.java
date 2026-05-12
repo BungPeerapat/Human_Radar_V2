@@ -18,8 +18,13 @@ import com.hivemq.client.mqtt.mqtt3.message.publish.Mqtt3Publish;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -80,12 +85,35 @@ public class MqttService {
         void onCmdAck(JsonObject ack);
     }
 
+    /** Discovery: invoked when a humanradar/+/status retained or live message arrives. */
+    public interface DiscoveryListener {
+        void onDeviceDiscovered(String deviceName, String status, long lastSeenMs);
+    }
+
+    /** A device seen on the wildcard discovery feed. */
+    public static class DiscoveredDevice {
+        public final String deviceName;
+        public String status;          // "online" / "offline" / raw payload
+        public long   lastSeenMs;
+
+        public DiscoveredDevice(String deviceName, String status, long lastSeenMs) {
+            this.deviceName = deviceName;
+            this.status     = status;
+            this.lastSeenMs = lastSeenMs;
+        }
+
+        public boolean isOnline() { return "online".equalsIgnoreCase(status); }
+    }
+
     private final List<ConnectionListener> connectionListeners = new CopyOnWriteArrayList<>();
     private final List<TargetListener> targetListeners = new CopyOnWriteArrayList<>();
     private final List<StatusListener> statusListeners = new CopyOnWriteArrayList<>();
     private final List<LogListener> logListeners = new CopyOnWriteArrayList<>();
     private final List<ConfigAckListener> configAckListeners = new CopyOnWriteArrayList<>();
     private final List<CmdAckListener> cmdAckListeners = new CopyOnWriteArrayList<>();
+    private final List<DiscoveryListener> discoveryListeners = new CopyOnWriteArrayList<>();
+    /** Devices observed via wildcard {@code humanradar/+/status} since connect. */
+    private final Map<String, DiscoveredDevice> discoveredDevices = new ConcurrentHashMap<>();
 
     private String deviceStatus = "unknown";
     private JsonObject lastTargetData;
@@ -109,6 +137,25 @@ public class MqttService {
     public void removeConfigAckListener(ConfigAckListener l) { configAckListeners.remove(l); }
     public void addCmdAckListener(CmdAckListener l) { cmdAckListeners.add(l); }
     public void removeCmdAckListener(CmdAckListener l) { cmdAckListeners.remove(l); }
+    public void addDiscoveryListener(DiscoveryListener l) { discoveryListeners.add(l); }
+    public void removeDiscoveryListener(DiscoveryListener l) { discoveryListeners.remove(l); }
+
+    /** Snapshot of every device seen via humanradar/+/status, newest-first by lastSeen. */
+    public List<DiscoveredDevice> getDiscoveredDevices() {
+        List<DiscoveredDevice> snap = new ArrayList<>(discoveredDevices.values());
+        Collections.sort(snap, (a, b) -> Long.compare(b.lastSeenMs, a.lastSeenMs));
+        return snap;
+    }
+
+    /** Just the devices currently reporting "online". */
+    public List<DiscoveredDevice> getOnlineDevices() {
+        List<DiscoveredDevice> out = new ArrayList<>();
+        for (DiscoveredDevice d : discoveredDevices.values()) {
+            if (d.isOnline()) out.add(d);
+        }
+        Collections.sort(out, Comparator.comparing(d -> d.deviceName.toLowerCase()));
+        return out;
+    }
 
     // State getters
     public boolean isConnected() { return connected; }
@@ -235,6 +282,7 @@ public class MqttService {
             client = null;
         }
         connected = false;
+        discoveredDevices.clear();
         if (appContext != null) {
             try {
                 MqttForegroundService.stop(appContext);
@@ -254,6 +302,36 @@ public class MqttService {
         subscribe(topic("log"), this::handleLog);
         subscribe(topic("config/ack"), this::handleConfigAck);
         subscribe(topic("cmd/ack"), this::handleCmdAck);
+
+        // Wildcard discovery — picks up every ESP32 that publishes humanradar/<name>/status
+        // on the same broker. Used by the device picker to show what's actually online.
+        subscribe("humanradar/+/status", this::handleDiscoveryStatus);
+    }
+
+    private void handleDiscoveryStatus(Mqtt3Publish publish) {
+        try {
+            String topicStr = publish.getTopic().toString();
+            String[] parts = topicStr.split("/");
+            if (parts.length < 3) return;
+            String devName = parts[1];
+            String status = new String(publish.getPayloadAsBytes(), StandardCharsets.UTF_8).trim();
+            long now = System.currentTimeMillis();
+            DiscoveredDevice existing = discoveredDevices.get(devName);
+            if (existing == null) {
+                discoveredDevices.put(devName, new DiscoveredDevice(devName, status, now));
+            } else {
+                existing.status = status;
+                existing.lastSeenMs = now;
+            }
+            mainHandler.post(() -> {
+                for (DiscoveryListener l : discoveryListeners) {
+                    try { l.onDeviceDiscovered(devName, status, now); }
+                    catch (Exception ignored) {}
+                }
+            });
+        } catch (Exception e) {
+            Log.w(TAG, "Discovery status parse failed", e);
+        }
     }
 
     private void subscribe(String topicFilter, java.util.function.Consumer<Mqtt3Publish> handler) {
