@@ -7,6 +7,7 @@ import android.util.Log;
 
 import com.example.radarhumanapplication.alerts.AlertPatternConfig;
 import com.example.radarhumanapplication.alerts.AlertPatternPlayer;
+import com.example.radarhumanapplication.alerts.DeviceStatusAlertManager;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -51,6 +52,7 @@ public class MqttService {
     private boolean connected = false;
     private Context appContext;
     private AlertPatternPlayer alertPlayer;
+    private DeviceStatusAlertManager deviceStatusAlerts;
 
     // Listeners
     public interface ConnectionListener {
@@ -134,10 +136,16 @@ public class MqttService {
         if (this.alertPlayer == null && this.appContext != null) {
             this.alertPlayer = new AlertPatternPlayer(this.appContext);
         }
+        if (this.deviceStatusAlerts == null && this.appContext != null) {
+            this.deviceStatusAlerts = new DeviceStatusAlertManager(this.appContext);
+        }
     }
 
     /** Get the singleton alert pattern player. Must call {@link #attachContext} first. */
     public AlertPatternPlayer getAlertPlayer() { return alertPlayer; }
+
+    /** Get the singleton device-status alert manager. Must call {@link #attachContext} first. */
+    public DeviceStatusAlertManager getDeviceStatusAlerts() { return deviceStatusAlerts; }
 
     /** Convenience: push new alert config into the player (called by ConfigFragment). */
     public void updateAlertConfig(AlertPatternConfig cfg) {
@@ -284,6 +292,10 @@ public class MqttService {
         String status = new String(publish.getPayloadAsBytes(), StandardCharsets.UTF_8);
         deviceStatus = status;
         mainHandler.post(() -> {
+            // Fire device online/offline notification sound (per-device, transition-only)
+            if (deviceStatusAlerts != null) {
+                deviceStatusAlerts.onDeviceStatus(deviceName, status);
+            }
             for (StatusListener l : statusListeners) l.onDeviceStatus(status);
         });
     }

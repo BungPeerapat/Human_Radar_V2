@@ -422,6 +422,130 @@
                 android:layout_marginTop="8dp" />
         </LinearLayout>
 
+        <!-- Device Online/Offline Notifications Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/radar_card"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Device Online / Offline Notifications"
+                android:textColor="@color/radar_blue"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/dev_alert_device_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Configuring: (current device)"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:layout_marginBottom="12dp" />
+
+            <!-- Online row -->
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/dev_alert_online_enable"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Play sound when device comes ONLINE"
+                android:textColor="@color/white"
+                android:checked="true"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/dev_alert_online_uri_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Online sound: (none)"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="middle" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="12dp">
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/dev_alert_pick_online"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="PICK ONLINE SOUND"
+                    android:layout_marginEnd="4dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/dev_alert_test_online"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="TEST ONLINE"
+                    android:layout_marginStart="4dp" />
+            </LinearLayout>
+
+            <!-- Offline row -->
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/dev_alert_offline_enable"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Play sound when device goes OFFLINE"
+                android:textColor="@color/white"
+                android:checked="true"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/dev_alert_offline_uri_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Offline sound: (none)"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="middle" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="8dp">
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/dev_alert_pick_offline"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="PICK OFFLINE SOUND"
+                    android:layout_marginEnd="4dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/dev_alert_test_offline"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="TEST OFFLINE"
+                    android:layout_marginStart="4dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/dev_alert_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp" />
+        </LinearLayout>
+
         <!-- Config ACK Card -->
         <LinearLayout
             android:layout_width="match_parent"

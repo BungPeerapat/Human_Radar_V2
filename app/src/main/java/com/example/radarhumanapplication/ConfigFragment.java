@@ -22,6 +22,8 @@ import androidx.fragment.app.Fragment;
 import com.example.radarhumanapplication.BuildConfig;
 import com.example.radarhumanapplication.alerts.AlertHttpClient;
 import com.example.radarhumanapplication.alerts.AlertPatternConfig;
+import com.example.radarhumanapplication.alerts.DeviceStatusAlertConfig;
+import com.example.radarhumanapplication.alerts.DeviceStatusAlertManager;
 import com.example.radarhumanapplication.update.UpdateDialog;
 import com.example.radarhumanapplication.update.UpdateManager;
 import com.google.android.material.button.MaterialButton;
@@ -57,6 +59,15 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private final AlertHttpClient alertHttp = new AlertHttpClient();
     private static final String ALERT_PREFS = "alert_prefs";
 
+    // Device online/offline notification UI
+    private MaterialSwitch devOnlineEnable, devOfflineEnable;
+    private TextView devDeviceLabel, devOnlineUriLabel, devOfflineUriLabel, devAlertStatus;
+    private MaterialButton btnPickOnline, btnPickOffline, btnTestOnline, btnTestOffline;
+    private String devOnlineUri = "";
+    private String devOfflineUri = "";
+    private ActivityResultLauncher<String[]> pickOnlineLauncher;
+    private ActivityResultLauncher<String[]> pickOfflineLauncher;
+
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -66,6 +77,12 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         pickLongLauncher = registerForActivityResult(
                 new ActivityResultContracts.OpenDocument(),
                 uri -> onSoundPicked(uri, false));
+        pickOnlineLauncher = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                uri -> onDeviceSoundPicked(uri, true));
+        pickOfflineLauncher = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                uri -> onDeviceSoundPicked(uri, false));
     }
 
     @Nullable
@@ -99,6 +116,115 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         mqtt.addConfigAckListener(this);
 
         bindAlertUi(v);
+        bindDeviceStatusAlertUi(v);
+    }
+
+    // ------------------------------------------------------------------
+    //  Device online/offline notification card
+    // ------------------------------------------------------------------
+    private void bindDeviceStatusAlertUi(View v) {
+        devDeviceLabel      = v.findViewById(R.id.dev_alert_device_label);
+        devOnlineEnable     = v.findViewById(R.id.dev_alert_online_enable);
+        devOfflineEnable    = v.findViewById(R.id.dev_alert_offline_enable);
+        devOnlineUriLabel   = v.findViewById(R.id.dev_alert_online_uri_label);
+        devOfflineUriLabel  = v.findViewById(R.id.dev_alert_offline_uri_label);
+        btnPickOnline       = v.findViewById(R.id.dev_alert_pick_online);
+        btnPickOffline      = v.findViewById(R.id.dev_alert_pick_offline);
+        btnTestOnline       = v.findViewById(R.id.dev_alert_test_online);
+        btnTestOffline      = v.findViewById(R.id.dev_alert_test_offline);
+        devAlertStatus      = v.findViewById(R.id.dev_alert_status);
+
+        loadCurrentDeviceStatusAlertCfg();
+
+        btnPickOnline.setOnClickListener(view -> launchDeviceSoundPicker(true));
+        btnPickOffline.setOnClickListener(view -> launchDeviceSoundPicker(false));
+        btnTestOnline.setOnClickListener(view -> testDeviceSound(true));
+        btnTestOffline.setOnClickListener(view -> testDeviceSound(false));
+
+        devOnlineEnable.setOnCheckedChangeListener((b, checked) -> saveCurrentDeviceStatusAlertCfg());
+        devOfflineEnable.setOnCheckedChangeListener((b, checked) -> saveCurrentDeviceStatusAlertCfg());
+    }
+
+    private void loadCurrentDeviceStatusAlertCfg() {
+        DeviceStatusAlertManager mgr = mqtt.getDeviceStatusAlerts();
+        String dev = mqtt.getDeviceName();
+        devDeviceLabel.setText("Configuring: " + (dev == null || dev.isEmpty() ? "(no device)" : dev));
+        if (mgr == null || dev == null || dev.isEmpty()) {
+            devOnlineUri = "";
+            devOfflineUri = "";
+            devOnlineUriLabel.setText("Online sound: (none)");
+            devOfflineUriLabel.setText("Offline sound: (none)");
+            return;
+        }
+        DeviceStatusAlertConfig c = mgr.getOrCreate(dev);
+        devOnlineEnable.setChecked(c.onlineEnabled);
+        devOfflineEnable.setChecked(c.offlineEnabled);
+        devOnlineUri  = c.onlineSoundUri  == null ? "" : c.onlineSoundUri;
+        devOfflineUri = c.offlineSoundUri == null ? "" : c.offlineSoundUri;
+        devOnlineUriLabel.setText("Online sound: "
+                + (devOnlineUri.isEmpty()  ? "(none)" : lastSegment(devOnlineUri)));
+        devOfflineUriLabel.setText("Offline sound: "
+                + (devOfflineUri.isEmpty() ? "(none)" : lastSegment(devOfflineUri)));
+    }
+
+    private void saveCurrentDeviceStatusAlertCfg() {
+        DeviceStatusAlertManager mgr = mqtt.getDeviceStatusAlerts();
+        String dev = mqtt.getDeviceName();
+        if (mgr == null || dev == null || dev.isEmpty()) return;
+        DeviceStatusAlertConfig c = new DeviceStatusAlertConfig(dev);
+        c.onlineEnabled   = devOnlineEnable.isChecked();
+        c.offlineEnabled  = devOfflineEnable.isChecked();
+        c.onlineSoundUri  = devOnlineUri;
+        c.offlineSoundUri = devOfflineUri;
+        mgr.save(c);
+    }
+
+    private void launchDeviceSoundPicker(boolean online) {
+        String[] mimes = {"audio/*"};
+        try {
+            (online ? pickOnlineLauncher : pickOfflineLauncher).launch(mimes);
+        } catch (Exception e) {
+            Toast.makeText(requireContext(),
+                    "No file picker available: " + e.getMessage(),
+                    Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void onDeviceSoundPicked(@Nullable Uri uri, boolean online) {
+        if (uri == null) return;
+        try {
+            int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            requireContext().getContentResolver().takePersistableUriPermission(uri, flags);
+        } catch (SecurityException ignored) {}
+        String s = uri.toString();
+        if (online) {
+            devOnlineUri = s;
+            devOnlineUriLabel.setText("Online sound: " + lastSegment(s));
+        } else {
+            devOfflineUri = s;
+            devOfflineUriLabel.setText("Offline sound: " + lastSegment(s));
+        }
+        saveCurrentDeviceStatusAlertCfg();
+        setDevAlertStatus("Saved " + (online ? "online" : "offline") + " sound", false);
+    }
+
+    private void testDeviceSound(boolean online) {
+        DeviceStatusAlertManager mgr = mqtt.getDeviceStatusAlerts();
+        String dev = mqtt.getDeviceName();
+        if (mgr == null || dev == null || dev.isEmpty()) {
+            setDevAlertStatus("No device configured", true);
+            return;
+        }
+        // Make sure the manager has the latest from this UI before testing
+        saveCurrentDeviceStatusAlertCfg();
+        mgr.testPlay(dev, online);
+        setDevAlertStatus("Playing " + (online ? "online" : "offline") + " sound...", false);
+    }
+
+    private void setDevAlertStatus(String text, boolean error) {
+        devAlertStatus.setText(text);
+        devAlertStatus.setTextColor(requireContext().getColor(
+                error ? R.color.radar_red : R.color.radar_green));
     }
 
     // ------------------------------------------------------------------
