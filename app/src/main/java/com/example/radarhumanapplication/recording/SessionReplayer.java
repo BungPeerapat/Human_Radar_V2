@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Singleton replayer for JSONL recordings produced by {@link SessionRecorder}.
@@ -31,7 +32,13 @@ public class SessionReplayer {
 
     public static SessionReplayer getInstance() { return INSTANCE; }
 
+    /** Listener invoked whenever a replay transitions in/out of the active state. */
+    public interface StateListener {
+        void onReplayStateChanged(boolean replaying, String fileName, double speed);
+    }
+
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final List<StateListener> listeners = new CopyOnWriteArrayList<>();
 
     private List<RecordingFile.Frame> frames = Collections.emptyList();
     private int index = 0;
@@ -41,8 +48,14 @@ public class SessionReplayer {
     private volatile boolean replaying;
     private volatile boolean paused;
     private long pausedElapsedMs;
+    private String currentFileName = "";
 
     private SessionReplayer() {}
+
+    public void addStateListener(StateListener l)    { if (l != null) listeners.add(l); }
+    public void removeStateListener(StateListener l) { listeners.remove(l); }
+    public String getCurrentFileName() { return currentFileName; }
+    public double getCurrentSpeed()    { return speed; }
 
     public synchronized boolean loadAndStart(File f, double speed) {
         stop();
@@ -62,6 +75,8 @@ public class SessionReplayer {
         this.replaying = true;
         this.paused = false;
         this.pausedElapsedMs = 0;
+        this.currentFileName = f.getName();
+        notifyState();
         scheduleNext();
         return true;
     }
@@ -81,11 +96,16 @@ public class SessionReplayer {
     }
 
     public synchronized void stop() {
+        boolean wasReplaying = replaying;
         replaying = false;
         paused = false;
         index = 0;
         frames = Collections.emptyList();
         main.removeCallbacksAndMessages(null);
+        if (wasReplaying) {
+            currentFileName = "";
+            notifyState();
+        }
     }
 
     public boolean isReplaying() { return replaying; }
@@ -105,6 +125,8 @@ public class SessionReplayer {
         if (!replaying || paused) return;
         if (index >= frames.size()) {
             replaying = false;
+            currentFileName = "";
+            notifyState();
             return;
         }
         RecordingFile.Frame frame = frames.get(index);
@@ -116,14 +138,22 @@ public class SessionReplayer {
 
     private void deliverNext() {
         RecordingFile.Frame frame;
+        boolean justFinished = false;
         synchronized (this) {
             if (!replaying || paused) return;
             if (index >= frames.size()) {
                 replaying = false;
-                return;
+                currentFileName = "";
+                justFinished = true;
+                frame = null;
+            } else {
+                frame = frames.get(index);
+                index++;
             }
-            frame = frames.get(index);
-            index++;
+        }
+        if (justFinished) {
+            notifyState();
+            return;
         }
         try {
             JsonObject data = new JsonObject();
@@ -140,6 +170,18 @@ public class SessionReplayer {
             Log.w(TAG, "Replay deliver failed", e);
         }
         scheduleNext();
+    }
+
+    private void notifyState() {
+        final boolean state = replaying;
+        final String  name  = currentFileName;
+        final double  spd   = speed;
+        main.post(() -> {
+            for (StateListener l : listeners) {
+                try { l.onReplayStateChanged(state, name, spd); }
+                catch (Exception ignored) {}
+            }
+        });
     }
 
     /**

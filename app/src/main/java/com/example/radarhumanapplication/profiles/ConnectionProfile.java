@@ -18,6 +18,9 @@ public class ConnectionProfile {
     public String deviceName;
     public String username;
     public String password;
+    /** ESP32 device's HTTP IP (e.g. "192.168.4.1") for /api/alert{,test} REST calls.
+     *  Optional — empty string means "not configured". */
+    public String espHttpIp = "";
 
     public ConnectionProfile() {
         // Required for Gson
@@ -63,7 +66,8 @@ public class ConnectionProfile {
                 && eq(brokerHost, p.brokerHost)
                 && eq(deviceName, p.deviceName)
                 && eq(username, p.username)
-                && eq(password, p.password);
+                && eq(password, p.password)
+                && eq(espHttpIp, p.espHttpIp);
     }
 
     @Override
@@ -76,6 +80,7 @@ public class ConnectionProfile {
         h = 31 * h + (deviceName == null ? 0 : deviceName.hashCode());
         h = 31 * h + (username == null ? 0 : username.hashCode());
         h = 31 * h + (password == null ? 0 : password.hashCode());
+        h = 31 * h + (espHttpIp == null ? 0 : espHttpIp.hashCode());
         return h;
     }
 

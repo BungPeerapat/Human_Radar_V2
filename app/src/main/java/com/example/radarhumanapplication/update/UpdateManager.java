@@ -85,6 +85,9 @@ public class UpdateManager {
 
     private void check(Context ctx, boolean userInitiated, CheckCallback cb) {
         String url = BuildConfig.UPDATE_MANIFEST_URL;
+        Log.i(TAG, "check(userInitiated=" + userInitiated + ") url=" + url
+                + " currentVersionCode=" + BuildConfig.VERSION_CODE
+                + " currentVersionName=" + BuildConfig.VERSION_NAME);
         if (url == null || url.isEmpty() || url.contains("REPLACE_ME")) {
             deliver(cb, new Result(Status.DISABLED, null, "Update manifest URL not configured"));
             return;
@@ -93,18 +96,24 @@ public class UpdateManager {
         io.execute(() -> {
             try {
                 String json = fetchString(url);
+                Log.i(TAG, "Manifest fetched (" + json.length() + " bytes)");
                 UpdateInfo info = gson.fromJson(json, UpdateInfo.class);
                 prefs(app).edit().putLong(KEY_LAST_CHECK_MS, System.currentTimeMillis()).apply();
 
                 if (info == null || !info.isUsable()) {
+                    Log.w(TAG, "Manifest malformed: " + json);
                     deliver(cb, new Result(Status.ERROR, null, "Manifest is malformed"));
                     return;
                 }
+                Log.i(TAG, "Manifest: vc=" + info.versionCode + " vn=" + info.versionName
+                        + " minSdk=" + info.minSdkVersion + " mandatory=" + info.mandatory);
                 if (Build.VERSION.SDK_INT < info.minSdkVersion) {
                     deliver(cb, new Result(Status.UP_TO_DATE, null, null));
                     return;
                 }
                 if (info.versionCode <= BuildConfig.VERSION_CODE) {
+                    Log.i(TAG, "Already on latest (current=" + BuildConfig.VERSION_CODE
+                            + ", manifest=" + info.versionCode + ")");
                     deliver(cb, new Result(Status.UP_TO_DATE, null, null));
                     return;
                 }
@@ -113,6 +122,7 @@ public class UpdateManager {
                     deliver(cb, new Result(Status.SKIPPED, info, null));
                     return;
                 }
+                Log.i(TAG, "Update available: " + info.versionName);
                 deliver(cb, new Result(Status.UPDATE_AVAILABLE, info, null));
             } catch (Exception e) {
                 Log.w(TAG, "Update check failed", e);

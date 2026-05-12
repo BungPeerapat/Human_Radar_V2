@@ -25,7 +25,10 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.example.radarhumanapplication.alerts.AlertManager;
+import com.example.radarhumanapplication.recording.SessionReplayer;
 import com.google.gson.JsonObject;
+
+import java.util.Locale;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -33,7 +36,7 @@ import java.io.OutputStream;
 
 public class RadarFragment extends Fragment
         implements MqttService.TargetListener, MqttService.ConnectionListener,
-                   AlertManager.RulesChangedListener {
+                   AlertManager.RulesChangedListener, SessionReplayer.StateListener {
 
     private static final String TAG = "RadarFragment";
 
@@ -42,6 +45,8 @@ public class RadarFragment extends Fragment
     private TextView tvStats, tvRadarStatus;
     private View statusBar, infoPanel;
     private View uxOverlay;
+    private View replayBadge;
+    private TextView replayBadgeDetail;
     private ImageButton btnKeepScreenOn, btnManualRotate, btnLockOrientation, btnNightMode, btnSnapshot;
     private boolean isFullscreen = false;
     private MqttService mqtt;
@@ -82,6 +87,8 @@ public class RadarFragment extends Fragment
         btnLockOrientation = v.findViewById(R.id.btn_lock_orientation);
         btnNightMode = v.findViewById(R.id.btn_night_mode);
         btnSnapshot = v.findViewById(R.id.btn_snapshot);
+        replayBadge = v.findViewById(R.id.replay_badge);
+        replayBadgeDetail = v.findViewById(R.id.replay_badge_detail);
 
         radarView.setInfoListener((targets, frameCount, errorCount, fps) -> {
             if (!isAdded()) return;
@@ -109,6 +116,32 @@ public class RadarFragment extends Fragment
         mqtt.addTargetListener(this);
         mqtt.addConnectionListener(this);
         AlertManager.getInstance().addRulesChangedListener(this);
+
+        // Replay badge — sync initial state in case a replay is already running.
+        SessionReplayer rep = SessionReplayer.getInstance();
+        rep.addStateListener(this);
+        onReplayStateChanged(rep.isReplaying(), rep.getCurrentFileName(), rep.getCurrentSpeed());
+    }
+
+    @Override
+    public void onReplayStateChanged(boolean replaying, String fileName, double speed) {
+        if (!isAdded() || replayBadge == null) return;
+        if (replaying) {
+            replayBadge.setVisibility(View.VISIBLE);
+            String detail = (fileName == null || fileName.isEmpty()) ? "" : fileName;
+            if (speed > 0 && Math.abs(speed - 1.0) > 0.001) {
+                detail = detail + (detail.isEmpty() ? "" : " ")
+                       + String.format(Locale.US, "@%sx", trimSpeed(speed));
+            }
+            replayBadgeDetail.setText(detail);
+        } else {
+            replayBadge.setVisibility(View.GONE);
+        }
+    }
+
+    private static String trimSpeed(double s) {
+        if (s == Math.floor(s)) return String.valueOf((int) s);
+        return String.format(Locale.US, "%.2f", s).replaceAll("0+$", "").replaceAll("\\.$", "");
     }
 
     @Override
@@ -184,6 +217,7 @@ public class RadarFragment extends Fragment
         mqtt.removeTargetListener(this);
         mqtt.removeConnectionListener(this);
         AlertManager.getInstance().removeRulesChangedListener(this);
+        SessionReplayer.getInstance().removeStateListener(this);
         super.onDestroyView();
     }
 

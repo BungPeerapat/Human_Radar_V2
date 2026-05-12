@@ -24,6 +24,9 @@ import com.example.radarhumanapplication.alerts.AlertHttpClient;
 import com.example.radarhumanapplication.alerts.AlertPatternConfig;
 import com.example.radarhumanapplication.alerts.DeviceStatusAlertConfig;
 import com.example.radarhumanapplication.alerts.DeviceStatusAlertManager;
+import com.example.radarhumanapplication.profiles.ConnectionProfile;
+import com.example.radarhumanapplication.profiles.DevicePickerDialog;
+import com.example.radarhumanapplication.profiles.ProfileManager;
 import com.example.radarhumanapplication.update.UpdateDialog;
 import com.example.radarhumanapplication.update.UpdateManager;
 import com.google.android.material.button.MaterialButton;
@@ -67,6 +70,8 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private String devOfflineUri = "";
     private ActivityResultLauncher<String[]> pickOnlineLauncher;
     private ActivityResultLauncher<String[]> pickOfflineLauncher;
+    /** Device name currently being configured in the online/offline card (defaults to active MQTT device). */
+    private String devAlertEditingDevice = "";
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -141,14 +146,38 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnTestOnline.setOnClickListener(view -> testDeviceSound(true));
         btnTestOffline.setOnClickListener(view -> testDeviceSound(false));
 
+        // Tap the "Configuring: …" label to switch which device's online/offline
+        // sounds are being edited. Works for multi-device installs.
+        devDeviceLabel.setOnClickListener(view -> pickEditingDevice());
+
         devOnlineEnable.setOnCheckedChangeListener((b, checked) -> saveCurrentDeviceStatusAlertCfg());
         devOfflineEnable.setOnCheckedChangeListener((b, checked) -> saveCurrentDeviceStatusAlertCfg());
     }
 
+    private void pickEditingDevice() {
+        DevicePickerDialog.show(requireContext(), "Configure which device?", p -> {
+            String name = p.deviceName == null ? "" : p.deviceName;
+            if (name.isEmpty()) return;
+            devAlertEditingDevice = name;
+            loadCurrentDeviceStatusAlertCfg();
+            setDevAlertStatus("Editing config for device: " + name, false);
+        });
+    }
+
+    /** Device name we're editing — defaults to the active MQTT device when nothing was picked. */
+    private String currentEditingDevice() {
+        if (devAlertEditingDevice != null && !devAlertEditingDevice.isEmpty()) {
+            return devAlertEditingDevice;
+        }
+        return mqtt.getDeviceName();
+    }
+
     private void loadCurrentDeviceStatusAlertCfg() {
         DeviceStatusAlertManager mgr = mqtt.getDeviceStatusAlerts();
-        String dev = mqtt.getDeviceName();
-        devDeviceLabel.setText("Configuring: " + (dev == null || dev.isEmpty() ? "(no device)" : dev));
+        String dev = currentEditingDevice();
+        String hint = "Configuring: " + (dev == null || dev.isEmpty() ? "(tap to pick)" : dev)
+                    + "  (tap to change)";
+        devDeviceLabel.setText(hint);
         if (mgr == null || dev == null || dev.isEmpty()) {
             devOnlineUri = "";
             devOfflineUri = "";
@@ -169,7 +198,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
 
     private void saveCurrentDeviceStatusAlertCfg() {
         DeviceStatusAlertManager mgr = mqtt.getDeviceStatusAlerts();
-        String dev = mqtt.getDeviceName();
+        String dev = currentEditingDevice();
         if (mgr == null || dev == null || dev.isEmpty()) return;
         DeviceStatusAlertConfig c = new DeviceStatusAlertConfig(dev);
         c.onlineEnabled   = devOnlineEnable.isChecked();
@@ -210,7 +239,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
 
     private void testDeviceSound(boolean online) {
         DeviceStatusAlertManager mgr = mqtt.getDeviceStatusAlerts();
-        String dev = mqtt.getDeviceName();
+        String dev = currentEditingDevice();
         if (mgr == null || dev == null || dev.isEmpty()) {
             setDevAlertStatus("No device configured", true);
             return;
@@ -218,7 +247,8 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         // Make sure the manager has the latest from this UI before testing
         saveCurrentDeviceStatusAlertCfg();
         mgr.testPlay(dev, online);
-        setDevAlertStatus("Playing " + (online ? "online" : "offline") + " sound...", false);
+        setDevAlertStatus("Playing " + (online ? "online" : "offline")
+                + " sound for " + dev, false);
     }
 
     private void setDevAlertStatus(String text, boolean error) {
@@ -358,8 +388,23 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     }
 
     private void onAlertFetch() {
-        String ip = getText(alertDeviceIp);
-        if (ip.isEmpty()) { setAlertStatus("Enter device IP first", true); return; }
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            doAlertFetch(typedIp);
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Fetch from device",
+                p -> {
+                    if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                        setAlertStatus("Profile \"" + p.name + "\" has no device IP", true);
+                        return;
+                    }
+                    alertDeviceIp.setText(p.espHttpIp);
+                    doAlertFetch(p.espHttpIp);
+                });
+    }
+
+    private void doAlertFetch(String ip) {
         setAlertStatus("Fetching from " + ip + "...", false);
         alertHttp.fetchConfig(ip, (cfg, err) -> {
             if (!isAdded()) return;
@@ -381,15 +426,29 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     }
 
     private void onAlertPush() {
-        String ip = getText(alertDeviceIp);
         AlertPatternConfig c = readAlertCfgFromUi();
         saveAlertPrefs(c);
         mqtt.updateAlertConfig(c);
-        if (ip.isEmpty()) { setAlertStatus("Saved locally (no IP for ESP32)", false); return; }
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            doAlertPush(typedIp, c);
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Push to device", p -> {
+            if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                setAlertStatus("Profile \"" + p.name + "\" has no device IP", true);
+                return;
+            }
+            alertDeviceIp.setText(p.espHttpIp);
+            doAlertPush(p.espHttpIp, c);
+        });
+    }
+
+    private void doAlertPush(String ip, AlertPatternConfig c) {
         setAlertStatus("Pushing to " + ip + "...", false);
         alertHttp.pushConfig(ip, c, (ok, err) -> {
             if (!isAdded()) return;
-            if (Boolean.TRUE.equals(ok)) setAlertStatus("Pushed OK", false);
+            if (Boolean.TRUE.equals(ok)) setAlertStatus("Pushed OK to " + ip, false);
             else setAlertStatus("Push failed: " + err, true);
         });
     }
@@ -404,12 +463,26 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     }
 
     private void onAlertTestRemote() {
-        String ip = getText(alertDeviceIp);
-        if (ip.isEmpty()) { setAlertStatus("Enter device IP first", true); return; }
-        setAlertStatus("Triggering ESP32 buzzer...", false);
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            doAlertTestRemote(typedIp, "(manual)");
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Test which ESP32?", p -> {
+            if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                setAlertStatus("Profile \"" + p.name + "\" has no device IP", true);
+                return;
+            }
+            alertDeviceIp.setText(p.espHttpIp);
+            doAlertTestRemote(p.espHttpIp, p.name);
+        });
+    }
+
+    private void doAlertTestRemote(String ip, String label) {
+        setAlertStatus("Triggering ESP32 (" + label + ") at " + ip + "...", false);
         alertHttp.testBeep(ip, 2, false, (ok, err) -> {
             if (!isAdded()) return;
-            if (Boolean.TRUE.equals(ok)) setAlertStatus("ESP32 test sent", false);
+            if (Boolean.TRUE.equals(ok)) setAlertStatus("ESP32 test sent to " + ip, false);
             else setAlertStatus("ESP32 test failed: " + err, true);
         });
     }
@@ -476,16 +549,34 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                     UpdateDialog.show(getParentFragmentManager(), result.info);
                     break;
                 case UP_TO_DATE:
-                    Toast.makeText(requireContext(), "You are on the latest version", Toast.LENGTH_SHORT).show();
+                    new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                            .setTitle("Up to date")
+                            .setMessage("You are on the latest version (v"
+                                    + BuildConfig.VERSION_NAME + ").")
+                            .setPositiveButton("OK", null)
+                            .show();
                     break;
                 case DISABLED:
-                    Toast.makeText(requireContext(), "Update channel not configured", Toast.LENGTH_LONG).show();
+                    new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                            .setTitle("Update channel not configured")
+                            .setMessage("This build was compiled without an UPDATE_MANIFEST_URL.\n\n"
+                                    + "Install the signed APK from the GitHub Releases page to enable "
+                                    + "the in-app updater.")
+                            .setPositiveButton("OK", null)
+                            .show();
                     break;
                 case ERROR:
                 default:
-                    Toast.makeText(requireContext(),
-                            "Check failed: " + (result.errorMessage != null ? result.errorMessage : "unknown"),
-                            Toast.LENGTH_LONG).show();
+                    new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                            .setTitle("Check failed")
+                            .setMessage("Could not reach the update server.\n\n"
+                                    + "Details: "
+                                    + (result.errorMessage != null ? result.errorMessage : "unknown")
+                                    + "\n\n"
+                                    + "Verify the phone has internet access and try again. Detailed "
+                                    + "logs are in adb logcat (tag: UpdateManager).")
+                            .setPositiveButton("OK", null)
+                            .show();
                     break;
             }
         });

@@ -6,12 +6,13 @@ plugins {
 val appVersionName: String = System.getenv("APP_VERSION_NAME") ?: "1.0.0"
 val appVersionCode: Int = (System.getenv("APP_VERSION_CODE") ?: "1").toInt()
 
-// Manifest URL is required for the in-app updater. Override per build via env or
-// gradle property; placeholder makes the updater short-circuit with DISABLED.
+// Manifest URL for the in-app updater. CI sets this via env var; local builds fall back
+// to the project's GitHub Releases "latest" redirect so a debug-installed APK can still
+// pick up published updates without anyone touching gradle.properties.
 val updateManifestUrl: String =
     System.getenv("UPDATE_MANIFEST_URL")
         ?: (project.findProperty("UPDATE_MANIFEST_URL") as String?)
-        ?: "https://REPLACE_ME.example.com/update.json"
+        ?: "https://github.com/BungPeerapat/Human_Radar_V2/releases/latest/download/update.json"
 
 android {
     namespace = "com.example.radarhumanapplication"
