@@ -166,6 +166,10 @@ void WebRadarServer::setupHTTP() {
             switch (upload.status) {
                 case UPLOAD_FILE_START:
                     Log::info(TAG_SYSTEM, "OTA start: %s", upload.filename.c_str());
+                    // Light up the "I'm receiving firmware" indicator on GPIO26:
+                    // 3 × slow (1s on/1s off) + 2 × fast (0.25s on/0.25s off).
+                    alertPattern.onFirmwareUpdateStart();
+                    alertPattern.update();
                     // Start an OTA write to the "next" partition. Size unknown =
                     // accept whatever fits the partition.
                     if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
@@ -179,6 +183,9 @@ void WebRadarServer::setupHTTP() {
                         Log::error(TAG_SYSTEM, "Update.write failed: %s",
                                    Update.errorString());
                     }
+                    // Drive the indicator from inside the upload loop because
+                    // main loop() is paused while the chunked POST drains.
+                    alertPattern.update();
                     break;
                 case UPLOAD_FILE_END:
                     if (Update.end(true)) {
@@ -188,10 +195,12 @@ void WebRadarServer::setupHTTP() {
                         Log::error(TAG_SYSTEM, "Update.end failed: %s",
                                    Update.errorString());
                     }
+                    alertPattern.update();
                     break;
                 case UPLOAD_FILE_ABORTED:
                     Update.end();
                     Log::warn(TAG_SYSTEM, "OTA aborted by client");
+                    alertPattern.update();
                     break;
                 default:
                     break;

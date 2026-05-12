@@ -124,6 +124,38 @@ void AlertPattern::startPatternFor_(uint8_t prev, uint8_t now) {
     }
 }
 
+void AlertPattern::onFirmwareUpdateStart() {
+    fwUpdateActive_ = true;
+    fwUpdateStartMs_ = millis();
+    Log::info(TAG, "Firmware-update indicator pattern started");
+}
+
+namespace {
+// Returns true if the firmware-update indicator wants the pin HIGH at this elapsed time.
+bool computeFwUpdateLevel(uint32_t elapsedMs, bool* doneOut) {
+    constexpr uint32_t SLOW_CYCLES   = 3;
+    constexpr uint32_t SLOW_PERIOD   = 2000;  // 1s on + 1s off
+    constexpr uint32_t SLOW_ON       = 1000;
+    constexpr uint32_t SLOW_TOTAL    = SLOW_CYCLES * SLOW_PERIOD;       //  6000 ms
+    constexpr uint32_t FAST_CYCLES   = 2;
+    constexpr uint32_t FAST_PERIOD   = 500;   // 0.25s on + 0.25s off
+    constexpr uint32_t FAST_ON       = 250;
+    constexpr uint32_t FAST_TOTAL    = FAST_CYCLES * FAST_PERIOD;       //  1000 ms
+    constexpr uint32_t TOTAL         = SLOW_TOTAL + FAST_TOTAL;         //  7000 ms
+
+    if (elapsedMs >= TOTAL) {
+        if (doneOut) *doneOut = true;
+        return false;
+    }
+    if (doneOut) *doneOut = false;
+    if (elapsedMs < SLOW_TOTAL) {
+        return (elapsedMs % SLOW_PERIOD) < SLOW_ON;
+    }
+    uint32_t fastElapsed = elapsedMs - SLOW_TOTAL;
+    return (fastElapsed % FAST_PERIOD) < FAST_ON;
+}
+}
+
 void AlertPattern::triggerTest(uint8_t shortCount, bool longPrefix) {
     if (alertPhase_ != AlertPhase::Idle) {
         Log::warn(TAG, "Test trigger ignored: pattern busy");
@@ -151,9 +183,16 @@ void AlertPattern::update() {
     advanceAlert_(now);
     advanceWifi_(now);
 
-    // Resolve final pin level: alert > wifi > off
+    // Resolve final pin level: firmware-update indicator > alert > wifi > off
     bool out = false;
-    if (alertPhase_ != AlertPhase::Idle) {
+    if (fwUpdateActive_) {
+        bool done = false;
+        out = computeFwUpdateLevel(now - fwUpdateStartMs_, &done);
+        if (done) {
+            fwUpdateActive_ = false;
+            Log::info(TAG, "Firmware-update indicator pattern completed");
+        }
+    } else if (alertPhase_ != AlertPhase::Idle) {
         out = alertLevel_;
     } else if (config_.ledWifiEnabled && wifiPhase_ != WifiPhase::Off) {
         out = wifiLevel_;

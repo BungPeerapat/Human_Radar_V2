@@ -643,15 +643,43 @@
                 android:text="PICK FIRMWARE .BIN (manual)"
                 android:layout_marginBottom="6dp" />
 
+            <!-- Prominent percent + progress bar shown during OTA. -->
+            <TextView
+                android:id="@+id/fw_progress_percent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="0%"
+                android:textColor="@color/radar_blue"
+                android:textSize="34sp"
+                android:textStyle="bold"
+                android:gravity="center"
+                android:fontFamily="monospace"
+                android:visibility="gone"
+                android:layout_marginTop="6dp" />
+
+            <TextView
+                android:id="@+id/fw_progress_phase"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@color/radar_text_dim"
+                android:textSize="13sp"
+                android:gravity="center"
+                android:visibility="gone"
+                android:layout_marginBottom="6dp" />
+
             <com.google.android.material.progressindicator.LinearProgressIndicator
                 android:id="@+id/fw_progress"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="12dp"
                 android:max="100"
                 android:progress="0"
                 android:visibility="gone"
-                android:layout_marginTop="4dp"
-                android:layout_marginBottom="4dp" />
+                app:trackThickness="12dp"
+                app:indicatorColor="@color/radar_blue"
+                app:trackCornerRadius="6dp"
+                android:layout_marginBottom="8dp"
+                xmlns:app="http://schemas.android.com/apk/res-auto" />
 
             <TextView
                 android:id="@+id/fw_status"

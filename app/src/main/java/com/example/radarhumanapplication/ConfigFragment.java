@@ -79,6 +79,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     // ESP32 Firmware OTA UI
     private MaterialButton btnFwCheck, btnFwPick, btnFwUpload;
     private TextView fwPickedLabel, fwStatus;
+    private TextView fwProgressPercent, fwProgressPhase;
     private LinearProgressIndicator fwProgress;
     private Uri pickedFirmwareUri;
     private long pickedFirmwareSize;
@@ -156,6 +157,8 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnFwUpload   = v.findViewById(R.id.btn_fw_upload);
         fwPickedLabel = v.findViewById(R.id.fw_picked_label);
         fwProgress    = v.findViewById(R.id.fw_progress);
+        fwProgressPercent = v.findViewById(R.id.fw_progress_percent);
+        fwProgressPhase   = v.findViewById(R.id.fw_progress_phase);
         fwStatus      = v.findViewById(R.id.fw_status);
         firmwareUploader = new FirmwareUploader(requireContext());
         firmwareUpdater  = new com.example.radarhumanapplication.update.FirmwareUpdater(requireContext());
@@ -235,7 +238,10 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         }
         DevicePickerDialog.show(requireContext(), "Flash which ESP32?", p -> {
             if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
-                setFwStatus("Profile \"" + p.name + "\" has no device IP", true);
+                offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                    alertDeviceIp.setText(ip);
+                    confirmFirmwareUpload(ip, p.name);
+                });
                 return;
             }
             alertDeviceIp.setText(p.espHttpIp);
@@ -258,21 +264,20 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private void doFirmwareUpload(String ip) {
         btnFwUpload.setEnabled(false);
         btnFwPick.setEnabled(false);
-        fwProgress.setVisibility(View.VISIBLE);
-        fwProgress.setProgress(0);
+        showFwProgress("Uploading to " + ip, 0);
         setFwStatus("Uploading to " + ip + "...", false);
 
         firmwareUploader.start(ip, pickedFirmwareUri, pickedFirmwareSize,
                 new FirmwareUploader.Callback() {
                     @Override public void onProgress(int percent) {
                         if (!isAdded()) return;
-                        fwProgress.setProgress(percent);
-                        setFwStatus("Uploading... " + percent + "%", false);
+                        showFwProgress("Uploading to " + ip, percent);
+                        setFwStatus("Uploading… " + percent + "%", false);
                     }
 
                     @Override public void onCompleted() {
                         if (!isAdded()) return;
-                        fwProgress.setProgress(100);
+                        showFwProgress("Upload complete", 100);
                         btnFwPick.setEnabled(true);
                         btnFwUpload.setEnabled(true);
                         setFwStatus("Upload complete. ESP32 is rebooting...", false);
@@ -287,7 +292,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
 
                     @Override public void onError(String message) {
                         if (!isAdded()) return;
-                        fwProgress.setVisibility(View.GONE);
+                        hideFwProgress();
                         btnFwPick.setEnabled(true);
                         btnFwUpload.setEnabled(true);
                         setFwStatus("Upload failed: " + message, true);
@@ -301,6 +306,23 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                 error ? R.color.radar_red : R.color.radar_green));
     }
 
+    /** Show the big percent + phase + progress bar together (during OTA). */
+    private void showFwProgress(String phase, int percent) {
+        fwProgress.setVisibility(View.VISIBLE);
+        fwProgressPercent.setVisibility(View.VISIBLE);
+        fwProgressPhase.setVisibility(View.VISIBLE);
+        fwProgress.setProgress(percent);
+        fwProgressPercent.setText(percent + "%");
+        if (phase != null) fwProgressPhase.setText(phase);
+    }
+
+    /** Hide the progress widgets. Status text stays. */
+    private void hideFwProgress() {
+        fwProgress.setVisibility(View.GONE);
+        fwProgressPercent.setVisibility(View.GONE);
+        fwProgressPhase.setVisibility(View.GONE);
+    }
+
     // ------------------------------------------------------------------
     //  CHECK FIRMWARE UPDATE — fetch manifest, compare, install
     // ------------------------------------------------------------------
@@ -312,7 +334,11 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         }
         DevicePickerDialog.show(requireContext(), "Check update on which ESP32?", p -> {
             if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
-                setFwStatus("Profile \"" + p.name + "\" has no device IP", true);
+                // Older firmware doesn't publish /info — offer manual / AP IP / mDNS.
+                offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                    alertDeviceIp.setText(ip);
+                    doCheckFirmwareUpdate(ip, p.name);
+                });
                 return;
             }
             alertDeviceIp.setText(p.espHttpIp);
@@ -405,7 +431,10 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         }
         DevicePickerDialog.show(requireContext(), "Rollback which ESP32?", p -> {
             if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
-                setFwStatus("Profile \"" + p.name + "\" has no device IP", true);
+                offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                    alertDeviceIp.setText(ip);
+                    confirmRollback(ip, p.name);
+                });
                 return;
             }
             alertDeviceIp.setText(p.espHttpIp);
@@ -443,20 +472,19 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnFwCheck.setEnabled(false);
         btnFwPick.setEnabled(false);
         btnFwUpload.setEnabled(false);
-        fwProgress.setVisibility(View.VISIBLE);
-        fwProgress.setProgress(0);
+        showFwProgress("Starting", 0);
         setFwStatus("Starting…", false);
 
         firmwareUpdater.install(manifest, ip,
                 new com.example.radarhumanapplication.update.FirmwareUpdater.InstallCallback() {
                     @Override public void onProgress(int percent, String phase) {
                         if (!isAdded()) return;
-                        fwProgress.setProgress(percent);
+                        showFwProgress(phase + " (" + label + ")", percent);
                         setFwStatus(phase + "… " + percent + "%", false);
                     }
                     @Override public void onInstalled() {
                         if (!isAdded()) return;
-                        fwProgress.setProgress(100);
+                        showFwProgress("Installed v" + manifest.versionName, 100);
                         btnFwCheck.setEnabled(true);
                         btnFwPick.setEnabled(true);
                         btnFwUpload.setEnabled(pickedFirmwareUri != null);
@@ -473,7 +501,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                     }
                     @Override public void onError(String message) {
                         if (!isAdded()) return;
-                        fwProgress.setVisibility(View.GONE);
+                        hideFwProgress();
                         btnFwCheck.setEnabled(true);
                         btnFwPick.setEnabled(true);
                         btnFwUpload.setEnabled(pickedFirmwareUri != null);
@@ -667,11 +695,50 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                 alertDeviceIp.setText(p.espHttpIp);
                 setAlertStatus("IP set to " + p.espHttpIp + " (" + p.name + ")", false);
             } else {
-                setAlertStatus("Device \"" + p.name + "\" has not announced its IP yet."
-                        + " Wait for it to come online via MQTT, or type the IP manually.",
-                        true);
+                offerManualIpFallback(p.name == null ? "device" : p.name,
+                        ip -> {
+                            alertDeviceIp.setText(ip);
+                            setAlertStatus("IP set to " + ip, false);
+                        });
             }
         });
+    }
+
+    /**
+     * Shown when a picked device has no IP available — typically because the ESP32 still
+     * runs firmware older than v1.0.23 (no humanradar/<name>/info publish), so the only
+     * thing the app knows is "device is online on MQTT". Offer a few quick guesses plus
+     * a manual entry path.
+     */
+    private interface IpChoice { void onIpChosen(String ip); }
+
+    private void offerManualIpFallback(String label, IpChoice cb) {
+        final String mdns = "HumanRadar.local";
+        final String ap   = "192.168.4.1";
+        String[] options = {
+                "Use AP IP (" + ap + ")",
+                "Use mDNS (" + mdns + ")",
+                "Enter IP manually",
+        };
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle("\"" + label + "\" did not announce an IP")
+                .setMessage("ESP32 publishes its IP automatically only when it runs "
+                        + "firmware v1.0.23 or newer.\n\n"
+                        + "If your device runs older firmware, pick one of these:")
+                .setItems(options, (d, which) -> {
+                    if (which == 0) {
+                        cb.onIpChosen(ap);
+                    } else if (which == 1) {
+                        cb.onIpChosen(mdns);
+                    } else {
+                        // Focus the IP field so the user can just start typing.
+                        alertDeviceIp.requestFocus();
+                        setAlertStatus("Type the device IP (find it in /settings page or "
+                                + "Arduino IDE Serial Monitor)", false);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void launchPicker(boolean isShort) {
@@ -770,7 +837,10 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         DevicePickerDialog.show(requireContext(), "Fetch from device",
                 p -> {
                     if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
-                        setAlertStatus("Profile \"" + p.name + "\" has no device IP", true);
+                        offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                            alertDeviceIp.setText(ip);
+                            doAlertFetch(ip);
+                        });
                         return;
                     }
                     alertDeviceIp.setText(p.espHttpIp);
@@ -810,7 +880,10 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         }
         DevicePickerDialog.show(requireContext(), "Push to device", p -> {
             if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
-                setAlertStatus("Profile \"" + p.name + "\" has no device IP", true);
+                offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                    alertDeviceIp.setText(ip);
+                    doAlertPush(ip, c);
+                });
                 return;
             }
             alertDeviceIp.setText(p.espHttpIp);
@@ -844,7 +917,10 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         }
         DevicePickerDialog.show(requireContext(), "Test which ESP32?", p -> {
             if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
-                setAlertStatus("Profile \"" + p.name + "\" has no device IP", true);
+                offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                    alertDeviceIp.setText(ip);
+                    doAlertTestRemote(ip, p.name);
+                });
                 return;
             }
             alertDeviceIp.setText(p.espHttpIp);

@@ -66,6 +66,17 @@ public:
      */
     void triggerTest(uint8_t shortCount, bool longPrefix);
 
+    /**
+     * Start the firmware-update indicator pattern on GPIO26 with highest priority:
+     *  - 3 cycles of 1s ON / 1s OFF (slow heartbeat, ~6 s)
+     *  - 2 cycles of 0.25s ON / 0.25s OFF (fast tail, ~1 s)
+     *  - Total ~7 s, then auto-stops
+     *
+     * Overrides target alerts and WiFi blink while active so the user knows the
+     * device is busy receiving firmware and must not be powered off.
+     */
+    void onFirmwareUpdateStart();
+
     /// Must be invoked every iteration of loop().
     void update();
 
@@ -108,6 +119,10 @@ private:
     uint8_t    candidateCount_  = 0;
     uint32_t   candidateSince_  = 0;
     bool       candidateActive_ = false;
+
+    // Firmware-update indicator (highest priority, time-driven)
+    bool       fwUpdateActive_ = false;
+    uint32_t   fwUpdateStartMs_ = 0;
 
     // Output
     bool       lastWrittenLevel_ = false;
