@@ -132,7 +132,18 @@ void setup() {
     mqttClient.begin();
 
     // Task watchdog — auto-reset if loop() hangs for more than 15 seconds.
+    // ESP32 Arduino core 3.x (IDF 5+) replaced the (timeout, panic) signature
+    // with a struct config. Pick the right one at compile time.
+#if defined(ESP_IDF_VERSION_MAJOR) && ESP_IDF_VERSION_MAJOR >= 5
+    const esp_task_wdt_config_t _wdtConfig = {
+        .timeout_ms     = 15000,
+        .idle_core_mask = 0,
+        .trigger_panic  = true,
+    };
+    esp_task_wdt_init(&_wdtConfig);
+#else
     esp_task_wdt_init(15, true);
+#endif
     esp_task_wdt_add(NULL);
 
     Log::info(TAG_SYSTEM, "========================================");
