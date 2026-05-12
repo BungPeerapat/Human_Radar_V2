@@ -1,13 +1,6 @@
 package com.example.radarhumanapplication.update;
 
-import android.app.DownloadManager;
-import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-import android.database.Cursor;
-import android.net.Uri;
-import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
@@ -15,20 +8,36 @@ import android.util.Log;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.security.MessageDigest;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Wraps Android's {@link DownloadManager} to fetch the APK and verify its SHA-256 against the
- * value declared in the manifest. The downloaded file lives in the app's external files dir,
- * which means no storage permission is required and uninstalling the app cleans it up.
+ * Fetches the APK over HTTP(S) directly into the app's external files dir and verifies its
+ * SHA-256 against the value declared in the manifest.
+ *
+ * <p><b>v3 rewrite (May 2026):</b> the original implementation delegated to Android's
+ * {@link android.app.DownloadManager}, which spawns its own system notification and (on some
+ * OEM ROMs) a download-manager UI when the user taps the notification. Users reported that
+ * tapping the notification dropped them into Downloads instead of the install screen. This
+ * direct downloader removes the DownloadManager from the flow entirely so the next thing the
+ * user sees after the progress bar finishes is the system package installer dialog.</p>
  */
 public class ApkDownloader {
 
     private static final String TAG = "ApkDownloader";
+
+    private static final int CONNECT_TIMEOUT_MS = 15_000;
+    private static final int READ_TIMEOUT_MS    = 30_000;
+    private static final int BUFFER_SIZE        = 16 * 1024;
+    /** Progress callbacks fire every N bytes to keep UI updates cheap. */
+    private static final int PROGRESS_CHUNK     = 64 * 1024;
 
     public interface Callback {
         /** Called on the main thread once the APK is verified and ready to install. */
@@ -44,22 +53,22 @@ public class ApkDownloader {
     private final Context appContext;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
-
-    private long currentDownloadId = -1;
-    private BroadcastReceiver completionReceiver;
-    private volatile boolean stopped = false;
-    private int lastReportedPct = -1;
+    private volatile boolean cancelled = false;
 
     public ApkDownloader(Context ctx) {
         this.appContext = ctx.getApplicationContext();
     }
 
     public void start(UpdateInfo info, Callback cb) {
-        stopped = false;
-        lastReportedPct = -1;
+        cancelled = false;
+
         File destDir = appContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
         if (destDir == null) {
-            cb.onError("External files dir unavailable");
+            postError(cb, "External files dir unavailable");
+            return;
+        }
+        if (!destDir.exists() && !destDir.mkdirs()) {
+            postError(cb, "Could not create download directory");
             return;
         }
         File outFile = new File(destDir, "human-radar-" + info.versionCode + ".apk");
@@ -67,130 +76,105 @@ public class ApkDownloader {
             Log.w(TAG, "Failed to delete stale APK at " + outFile);
         }
 
-        DownloadManager dm = (DownloadManager) appContext.getSystemService(Context.DOWNLOAD_SERVICE);
-        if (dm == null) {
-            cb.onError("DownloadManager unavailable");
-            return;
-        }
-
-        DownloadManager.Request req = new DownloadManager.Request(Uri.parse(info.apkUrl))
-                .setTitle("Human Radar update")
-                .setDescription("Downloading v" + info.versionName)
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .setDestinationUri(Uri.fromFile(outFile))
-                .setMimeType("application/vnd.android.package-archive");
-
-        currentDownloadId = dm.enqueue(req);
-        registerCompletion(dm, info, outFile, cb);
-        pollProgress(dm, cb);
+        io.execute(() -> downloadAndVerify(info, outFile, cb));
     }
 
-    private void registerCompletion(DownloadManager dm, UpdateInfo info, File outFile, Callback cb) {
-        completionReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
-                if (id != currentDownloadId) return;
-                unregisterCompletion();
+    public void cancel() {
+        cancelled = true;
+    }
 
-                io.execute(() -> {
-                    try {
-                        if (!queryStatusSucceeded(dm, id)) {
-                            postError(cb, "Download failed");
-                            return;
-                        }
-                        if (!outFile.exists() || outFile.length() == 0) {
-                            postError(cb, "Downloaded file missing");
-                            return;
-                        }
-                        if (info.sizeBytes > 0 && Math.abs(outFile.length() - info.sizeBytes) > 0) {
-                            // Size mismatch is suspicious but not always fatal (server may strip
-                            // padding). The SHA-256 check below is the real gate.
-                            Log.w(TAG, "Size mismatch: got " + outFile.length() + " expected " + info.sizeBytes);
-                        }
-                        String actualSha = sha256(outFile);
-                        if (!actualSha.equalsIgnoreCase(info.sha256)) {
-                            //noinspection ResultOfMethodCallIgnored
-                            outFile.delete();
-                            postError(cb, "Checksum mismatch — file rejected");
-                            return;
-                        }
-                        main.post(() -> cb.onReady(outFile));
-                    } catch (Exception e) {
-                        Log.e(TAG, "Post-download verification failed", e);
-                        postError(cb, e.getMessage());
-                    }
-                });
+    private void downloadAndVerify(UpdateInfo info, File outFile, Callback cb) {
+        HttpURLConnection conn = null;
+        OutputStream out = null;
+        InputStream in = null;
+        try {
+            URL url = new URL(info.apkUrl);
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            conn.setReadTimeout(READ_TIMEOUT_MS);
+            conn.setInstanceFollowRedirects(true);
+            conn.setRequestProperty("Accept", "application/vnd.android.package-archive, */*");
+
+            int code = conn.getResponseCode();
+            if (code / 100 != 2) {
+                postError(cb, "HTTP " + code);
+                return;
             }
-        };
 
-        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            appContext.registerReceiver(completionReceiver, filter, Context.RECEIVER_EXPORTED);
-        } else {
-            appContext.registerReceiver(completionReceiver, filter);
-        }
-    }
+            long total = conn.getContentLengthLong();
+            if (total <= 0 && info.sizeBytes > 0) total = info.sizeBytes;
+            Log.i(TAG, "Downloading " + info.apkUrl + " (" + total + " bytes) -> " + outFile);
 
-    private void unregisterCompletion() {
-        if (completionReceiver != null) {
-            try {
-                appContext.unregisterReceiver(completionReceiver);
-            } catch (IllegalArgumentException ignored) {}
-            completionReceiver = null;
-        }
-    }
+            in  = conn.getInputStream();
+            out = new FileOutputStream(outFile);
 
-    private void pollProgress(DownloadManager dm, Callback cb) {
-        Runnable poll = new Runnable() {
-            @Override
-            public void run() {
-                if (stopped || currentDownloadId == -1 || completionReceiver == null) return;
-                try {
-                    DownloadManager.Query q = new DownloadManager.Query().setFilterById(currentDownloadId);
-                    try (Cursor c = dm.query(q)) {
-                        if (c != null && c.moveToFirst()) {
-                            int statusCol = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
-                            int totalCol = c.getColumnIndex(DownloadManager.COLUMN_TOTAL_SIZE_BYTES);
-                            int doneCol = c.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR);
-                            int status = statusCol >= 0 ? c.getInt(statusCol) : 0;
-                            long total = totalCol >= 0 ? c.getLong(totalCol) : 0;
-                            long done = doneCol >= 0 ? c.getLong(doneCol) : 0;
-                            if (total > 0) {
-                                int pct = (int) (done * 100 / total);
-                                if (pct != lastReportedPct) {
-                                    lastReportedPct = pct;
-                                    try {
-                                        cb.onProgress(pct);
-                                    } catch (Exception e) {
-                                        // Never let a UI callback failure kill the polling loop
-                                        Log.w(TAG, "onProgress callback threw", e);
-                                    }
-                                }
-                            }
-                            if (status == DownloadManager.STATUS_SUCCESSFUL
-                                    || status == DownloadManager.STATUS_FAILED) {
-                                return;
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    Log.w(TAG, "Progress poll failed", e);
+            byte[] buf = new byte[BUFFER_SIZE];
+            long downloaded = 0;
+            long sinceLastReport = 0;
+            int lastPct = -1;
+            int read;
+            while ((read = in.read(buf)) > 0) {
+                if (cancelled) {
+                    Log.i(TAG, "Download cancelled at " + downloaded + "/" + total);
+                    safeDelete(outFile);
+                    postError(cb, "Download cancelled");
+                    return;
                 }
-                if (!stopped) {
-                    main.postDelayed(this, 500);
+                out.write(buf, 0, read);
+                downloaded += read;
+                sinceLastReport += read;
+                if (sinceLastReport >= PROGRESS_CHUNK && total > 0) {
+                    sinceLastReport = 0;
+                    int pct = (int) Math.min(100, downloaded * 100 / total);
+                    if (pct != lastPct) {
+                        lastPct = pct;
+                        final int finalPct = pct;
+                        main.post(() -> cb.onProgress(finalPct));
+                    }
                 }
             }
-        };
-        main.postDelayed(poll, 500);
-    }
+            out.flush();
+            out.close();
+            out = null;
+            in.close();
+            in = null;
 
-    private boolean queryStatusSucceeded(DownloadManager dm, long id) {
-        DownloadManager.Query q = new DownloadManager.Query().setFilterById(id);
-        try (Cursor c = dm.query(q)) {
-            if (c == null || !c.moveToFirst()) return false;
-            int idx = c.getColumnIndex(DownloadManager.COLUMN_STATUS);
-            return idx >= 0 && c.getInt(idx) == DownloadManager.STATUS_SUCCESSFUL;
+            if (cancelled) {
+                safeDelete(outFile);
+                postError(cb, "Download cancelled");
+                return;
+            }
+
+            // Final 100% tick so the UI never freezes at 99%
+            main.post(() -> cb.onProgress(100));
+
+            if (info.sizeBytes > 0 && Math.abs(outFile.length() - info.sizeBytes) > 0) {
+                Log.w(TAG, "Size mismatch: got " + outFile.length()
+                        + " expected " + info.sizeBytes);
+            }
+
+            String actualSha = sha256(outFile);
+            if (info.sha256 != null && !info.sha256.isEmpty()
+                    && !actualSha.equalsIgnoreCase(info.sha256)) {
+                Log.w(TAG, "SHA-256 mismatch: actual=" + actualSha + " expected=" + info.sha256);
+                safeDelete(outFile);
+                postError(cb, "Checksum mismatch — file rejected");
+                return;
+            }
+
+            Log.i(TAG, "APK ready: " + outFile + " (" + outFile.length() + " bytes)");
+            main.post(() -> cb.onReady(outFile));
+
+        } catch (Exception e) {
+            Log.e(TAG, "Download failed", e);
+            safeDelete(outFile);
+            postError(cb, e.getMessage());
+        } finally {
+            closeQuietly(out);
+            closeQuietly(in);
+            if (conn != null) {
+                try { conn.disconnect(); } catch (Exception ignored) {}
+            }
         }
     }
 
@@ -198,24 +182,21 @@ public class ApkDownloader {
         main.post(() -> cb.onError(msg != null ? msg : "Unknown error"));
     }
 
-    public void cancel() {
-        stopped = true;
-        if (currentDownloadId != -1) {
-            DownloadManager dm = (DownloadManager) appContext.getSystemService(Context.DOWNLOAD_SERVICE);
-            if (dm != null) {
-                try { dm.remove(currentDownloadId); } catch (Exception e) {
-                    Log.w(TAG, "dm.remove failed", e);
-                }
-            }
-            currentDownloadId = -1;
+    private static void safeDelete(File f) {
+        if (f != null && f.exists() && !f.delete()) {
+            Log.w(TAG, "Could not delete partial APK at " + f);
         }
-        unregisterCompletion();
+    }
+
+    private static void closeQuietly(java.io.Closeable c) {
+        if (c == null) return;
+        try { c.close(); } catch (Exception ignored) {}
     }
 
     static String sha256(File file) throws Exception {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         try (InputStream is = new FileInputStream(file)) {
-            byte[] buf = new byte[8192];
+            byte[] buf = new byte[BUFFER_SIZE];
             int n;
             while ((n = is.read(buf)) > 0) md.update(buf, 0, n);
         }
