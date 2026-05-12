@@ -56,6 +56,9 @@ jobs:
         run: pip install --upgrade platformio
 
       - name: Build ESP32 firmware
+        env:
+          # Stamp the firmware so /api/version returns the same string as the tag.
+          PLATFORMIO_BUILD_FLAGS: -DFW_VERSION=\"${{ steps.version.outputs.version_name }}\"
         run: |
           pio run -d firmware
           FW_BIN=$(find firmware/.pio/build -name 'firmware.bin' | head -n1)
@@ -209,6 +212,24 @@ jobs:
           EOF
           cat update.json
 
+      - name: Generate firmware manifest
+        if: env.FIRMWARE_BIN != ''
+        run: |
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="${{ steps.version.outputs.version_name }}"
+          cat > firmware.json <<EOF
+          {
+            "versionName": "${{ steps.version.outputs.version_name }}",
+            "versionCode": ${{ steps.version.outputs.version_code }},
+            "binUrl": "https://github.com/${REPO}/releases/download/v${TAG}/${FIRMWARE_BIN}",
+            "sha256": "${FIRMWARE_SHA256}",
+            "sizeBytes": ${FIRMWARE_SIZE},
+            "releaseNotes": ${{ steps.notes.outputs.notes_json }},
+            "publishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          cat firmware.json
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -219,6 +240,7 @@ jobs:
             ${{ steps.apk.outputs.path }}
             update.json
             ${{ env.FIRMWARE_BIN }}
+            firmware.json
           fail_on_unmatched_files: false
 
       - name: Verify manifest URL

@@ -202,6 +202,14 @@ void WebRadarServer::setupHTTP() {
         _http.send(200, "application/json", "{\"status\":\"ok\"}");
     });
 
+    // Lightweight firmware version endpoint — the app polls this to compare
+    // against the manifest in GitHub Releases.
+    _http.on("/api/version", HTTP_GET, [this]() {
+        char json[128];
+        snprintf(json, sizeof(json), "{\"fw\":\"%s\"}", FW_VERSION);
+        _http.send(200, "application/json", json);
+    });
+
     // Captive portal: redirect unknown URLs to /settings in AP mode
     _http.onNotFound([this]() {
         if (_isAP) {

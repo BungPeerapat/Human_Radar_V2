@@ -9,7 +9,12 @@
 // ============================================================================
 // Firmware Version
 // ============================================================================
-#define FW_VERSION "0.5.0"
+// FW_VERSION is overridable at build time via -DFW_VERSION="x.y.z"
+// (CI passes APP_VERSION_NAME so the .bin's reported version matches the tag).
+// Local Arduino IDE builds fall through to this default.
+#ifndef FW_VERSION
+#define FW_VERSION "1.0.18"
+#endif
 
 // ============================================================================
 // Detection Zone (HLK-LD2450 supports 3 zones)

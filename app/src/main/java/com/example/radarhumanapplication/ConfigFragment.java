@@ -76,7 +76,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private String devAlertEditingDevice = "";
 
     // ESP32 Firmware OTA UI
-    private MaterialButton btnFwPick, btnFwUpload;
+    private MaterialButton btnFwCheck, btnFwPick, btnFwUpload;
     private TextView fwPickedLabel, fwStatus;
     private LinearProgressIndicator fwProgress;
     private Uri pickedFirmwareUri;
@@ -84,6 +84,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private String pickedFirmwareName = "";
     private ActivityResultLauncher<String[]> pickFirmwareLauncher;
     private FirmwareUploader firmwareUploader;
+    private com.example.radarhumanapplication.update.FirmwareUpdater firmwareUpdater;
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -144,12 +145,16 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     //  ESP32 Firmware OTA card
     // ------------------------------------------------------------------
     private void bindFirmwareOtaUi(View v) {
+        btnFwCheck    = v.findViewById(R.id.btn_fw_check);
         btnFwPick     = v.findViewById(R.id.btn_fw_pick);
         btnFwUpload   = v.findViewById(R.id.btn_fw_upload);
         fwPickedLabel = v.findViewById(R.id.fw_picked_label);
         fwProgress    = v.findViewById(R.id.fw_progress);
         fwStatus      = v.findViewById(R.id.fw_status);
         firmwareUploader = new FirmwareUploader(requireContext());
+        firmwareUpdater  = new com.example.radarhumanapplication.update.FirmwareUpdater(requireContext());
+
+        btnFwCheck.setOnClickListener(view -> onCheckFirmwareUpdate());
 
         btnFwPick.setOnClickListener(view -> {
             try {
@@ -273,6 +278,112 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         fwStatus.setText(text);
         fwStatus.setTextColor(requireContext().getColor(
                 error ? R.color.radar_red : R.color.radar_green));
+    }
+
+    // ------------------------------------------------------------------
+    //  CHECK FIRMWARE UPDATE — fetch manifest, compare, install
+    // ------------------------------------------------------------------
+    private void onCheckFirmwareUpdate() {
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            doCheckFirmwareUpdate(typedIp, "(manual)");
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Check update on which ESP32?", p -> {
+            if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                setFwStatus("Profile \"" + p.name + "\" has no device IP", true);
+                return;
+            }
+            alertDeviceIp.setText(p.espHttpIp);
+            doCheckFirmwareUpdate(p.espHttpIp, p.name);
+        });
+    }
+
+    private void doCheckFirmwareUpdate(String ip, String label) {
+        btnFwCheck.setEnabled(false);
+        btnFwCheck.setText("Checking…");
+        setFwStatus("Fetching firmware manifest…", false);
+        firmwareUpdater.check(
+                com.example.radarhumanapplication.update.FirmwareUpdater.DEFAULT_MANIFEST_URL,
+                ip,
+                (manifest, deviceVersion, error) -> {
+                    if (!isAdded()) return;
+                    btnFwCheck.setEnabled(true);
+                    btnFwCheck.setText("CHECK FIRMWARE UPDATE");
+                    if (manifest == null) {
+                        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("Check failed")
+                                .setMessage(error != null ? error : "Could not fetch manifest")
+                                .setPositiveButton("OK", null)
+                                .show();
+                        return;
+                    }
+                    String devLine = deviceVersion.isEmpty()
+                            ? "Device (" + label + " @ " + ip + "): unknown (device offline?)"
+                            : "Device (" + label + " @ " + ip + "): v" + deviceVersion;
+                    String latestLine = "Latest: v" + manifest.versionName
+                            + "  (" + (manifest.sizeBytes / 1024) + " KB)";
+                    String body = devLine + "\n" + latestLine
+                            + "\n\n" + (manifest.releaseNotes == null ? "" : manifest.releaseNotes);
+
+                    boolean sameVersion = !deviceVersion.isEmpty()
+                            && manifest.versionName.equalsIgnoreCase(deviceVersion);
+
+                    androidx.appcompat.app.AlertDialog.Builder b =
+                            new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                    .setTitle(sameVersion ? "Already up to date" : "Firmware update available")
+                                    .setMessage(body)
+                                    .setNegativeButton("Close", null);
+                    if (!sameVersion) {
+                        b.setPositiveButton("Install", (d, w) -> startFirmwareInstall(manifest, ip, label));
+                    }
+                    b.show();
+                });
+    }
+
+    private void startFirmwareInstall(
+            com.example.radarhumanapplication.update.FirmwareManifest manifest,
+            String ip, String label) {
+        btnFwCheck.setEnabled(false);
+        btnFwPick.setEnabled(false);
+        btnFwUpload.setEnabled(false);
+        fwProgress.setVisibility(View.VISIBLE);
+        fwProgress.setProgress(0);
+        setFwStatus("Starting…", false);
+
+        firmwareUpdater.install(manifest, ip,
+                new com.example.radarhumanapplication.update.FirmwareUpdater.InstallCallback() {
+                    @Override public void onProgress(int percent, String phase) {
+                        if (!isAdded()) return;
+                        fwProgress.setProgress(percent);
+                        setFwStatus(phase + "… " + percent + "%", false);
+                    }
+                    @Override public void onInstalled() {
+                        if (!isAdded()) return;
+                        fwProgress.setProgress(100);
+                        btnFwCheck.setEnabled(true);
+                        btnFwPick.setEnabled(true);
+                        btnFwUpload.setEnabled(pickedFirmwareUri != null);
+                        setFwStatus("ESP32 (" + label + ") rebooting into v"
+                                + manifest.versionName, false);
+                        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("Firmware installed")
+                                .setMessage("ESP32 (" + label + ") rebooted into v"
+                                        + manifest.versionName + ".\n\n"
+                                        + "MQTT will reconnect automatically once the device "
+                                        + "comes back online.")
+                                .setPositiveButton("OK", null)
+                                .show();
+                    }
+                    @Override public void onError(String message) {
+                        if (!isAdded()) return;
+                        fwProgress.setVisibility(View.GONE);
+                        btnFwCheck.setEnabled(true);
+                        btnFwPick.setEnabled(true);
+                        btnFwUpload.setEnabled(pickedFirmwareUri != null);
+                        setFwStatus("Install failed: " + message, true);
+                    }
+                });
     }
 
     // ------------------------------------------------------------------

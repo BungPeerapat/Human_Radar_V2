@@ -612,11 +612,18 @@
                 android:layout_marginBottom="6dp" />
 
             <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_fw_check"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="CHECK FIRMWARE UPDATE"
+                android:layout_marginBottom="6dp" />
+
+            <com.google.android.material.button.MaterialButton
                 android:id="@+id/btn_fw_pick"
                 style="@style/Widget.Material3.Button.OutlinedButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="PICK FIRMWARE .BIN"
+                android:text="PICK FIRMWARE .BIN (manual)"
                 android:layout_marginBottom="6dp" />
 
             <com.google.android.material.progressindicator.LinearProgressIndicator
