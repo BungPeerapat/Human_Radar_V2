@@ -3,6 +3,8 @@
 #include "alert_pattern.h"
 #include "logger.h"
 
+#include <Update.h>  // ESP32 OTA helper (built-in to esp32 Arduino core)
+
 // Global instance
 WebRadarServer webServer;
 
@@ -135,6 +137,65 @@ void WebRadarServer::setupHTTP() {
     _http.on("/api/alert/test", HTTP_POST, [this]() {
         handleTestAlert();
     });
+
+    // OTA firmware update endpoint:
+    //   POST /api/firmware-update  (multipart/form-data, field name "firmware")
+    // Receives the .bin file in chunks and streams it into the OTA partition via
+    // ESP32 Update.h. On success, the response fires and the device reboots into
+    // the new firmware automatically.
+    _http.on("/api/firmware-update", HTTP_POST,
+        [this]() {
+            // This first lambda runs AFTER the upload completes (or fails).
+            if (Update.hasError()) {
+                String err = String("{\"ok\":false,\"error\":\"") +
+                             Update.errorString() + "\"}";
+                Log::error(TAG_SYSTEM, "OTA failed: %s", Update.errorString());
+                _http.send(500, "application/json", err);
+            } else {
+                _http.send(200, "application/json",
+                           "{\"ok\":true,\"restarting\":true}");
+                Log::info(TAG_SYSTEM, "OTA complete, restarting in 1s");
+                delay(1000);
+                ESP.restart();
+            }
+        },
+        [this]() {
+            // This second lambda runs per upload chunk.
+            HTTPUpload& upload = _http.upload();
+            switch (upload.status) {
+                case UPLOAD_FILE_START:
+                    Log::info(TAG_SYSTEM, "OTA start: %s", upload.filename.c_str());
+                    // Start an OTA write to the "next" partition. Size unknown =
+                    // accept whatever fits the partition.
+                    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+                        Log::error(TAG_SYSTEM, "Update.begin failed: %s",
+                                   Update.errorString());
+                    }
+                    break;
+                case UPLOAD_FILE_WRITE:
+                    if (Update.write(upload.buf, upload.currentSize) !=
+                        upload.currentSize) {
+                        Log::error(TAG_SYSTEM, "Update.write failed: %s",
+                                   Update.errorString());
+                    }
+                    break;
+                case UPLOAD_FILE_END:
+                    if (Update.end(true)) {
+                        Log::info(TAG_SYSTEM, "OTA end: %u bytes accepted",
+                                  upload.totalSize);
+                    } else {
+                        Log::error(TAG_SYSTEM, "Update.end failed: %s",
+                                   Update.errorString());
+                    }
+                    break;
+                case UPLOAD_FILE_ABORTED:
+                    Update.end();
+                    Log::warn(TAG_SYSTEM, "OTA aborted by client");
+                    break;
+                default:
+                    break;
+            }
+        });
 
     // Health check
     _http.on("/health", HTTP_GET, [this]() {

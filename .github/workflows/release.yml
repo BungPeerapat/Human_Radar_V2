@@ -47,6 +47,29 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
 
+      - name: Set up Python (PlatformIO)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build ESP32 firmware
+        run: |
+          pio run -d firmware
+          FW_BIN=$(find firmware/.pio/build -name 'firmware.bin' | head -n1)
+          if [ -z "$FW_BIN" ]; then
+            echo "::warning::No firmware.bin produced — skipping firmware release asset"
+            exit 0
+          fi
+          DEST_FW="firmware-v${{ steps.version.outputs.version_name }}.bin"
+          cp "$FW_BIN" "$DEST_FW"
+          echo "FIRMWARE_BIN=$DEST_FW" >> "$GITHUB_ENV"
+          echo "FIRMWARE_SIZE=$(stat -c %s "$DEST_FW")" >> "$GITHUB_ENV"
+          echo "FIRMWARE_SHA256=$(sha256sum "$DEST_FW" | awk '{print $1}')" >> "$GITHUB_ENV"
+          echo "Built firmware: $DEST_FW ($(stat -c %s "$DEST_FW") bytes)"
+
       - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -195,7 +218,8 @@ jobs:
           files: |
             ${{ steps.apk.outputs.path }}
             update.json
-          fail_on_unmatched_files: true
+            ${{ env.FIRMWARE_BIN }}
+          fail_on_unmatched_files: false
 
       - name: Verify manifest URL
         run: |

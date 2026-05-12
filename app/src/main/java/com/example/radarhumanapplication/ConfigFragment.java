@@ -27,6 +27,8 @@ import com.example.radarhumanapplication.alerts.DeviceStatusAlertManager;
 import com.example.radarhumanapplication.profiles.ConnectionProfile;
 import com.example.radarhumanapplication.profiles.DevicePickerDialog;
 import com.example.radarhumanapplication.profiles.ProfileManager;
+import com.example.radarhumanapplication.update.FirmwareUploader;
+import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.example.radarhumanapplication.update.UpdateDialog;
 import com.example.radarhumanapplication.update.UpdateManager;
 import com.google.android.material.button.MaterialButton;
@@ -73,6 +75,16 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     /** Device name currently being configured in the online/offline card (defaults to active MQTT device). */
     private String devAlertEditingDevice = "";
 
+    // ESP32 Firmware OTA UI
+    private MaterialButton btnFwPick, btnFwUpload;
+    private TextView fwPickedLabel, fwStatus;
+    private LinearProgressIndicator fwProgress;
+    private Uri pickedFirmwareUri;
+    private long pickedFirmwareSize;
+    private String pickedFirmwareName = "";
+    private ActivityResultLauncher<String[]> pickFirmwareLauncher;
+    private FirmwareUploader firmwareUploader;
+
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -88,6 +100,9 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         pickOfflineLauncher = registerForActivityResult(
                 new ActivityResultContracts.OpenDocument(),
                 uri -> onDeviceSoundPicked(uri, false));
+        pickFirmwareLauncher = registerForActivityResult(
+                new ActivityResultContracts.OpenDocument(),
+                this::onFirmwarePicked);
     }
 
     @Nullable
@@ -122,6 +137,142 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
 
         bindAlertUi(v);
         bindDeviceStatusAlertUi(v);
+        bindFirmwareOtaUi(v);
+    }
+
+    // ------------------------------------------------------------------
+    //  ESP32 Firmware OTA card
+    // ------------------------------------------------------------------
+    private void bindFirmwareOtaUi(View v) {
+        btnFwPick     = v.findViewById(R.id.btn_fw_pick);
+        btnFwUpload   = v.findViewById(R.id.btn_fw_upload);
+        fwPickedLabel = v.findViewById(R.id.fw_picked_label);
+        fwProgress    = v.findViewById(R.id.fw_progress);
+        fwStatus      = v.findViewById(R.id.fw_status);
+        firmwareUploader = new FirmwareUploader(requireContext());
+
+        btnFwPick.setOnClickListener(view -> {
+            try {
+                // ESP32 .bin files have no standard MIME type — accept anything binary.
+                pickFirmwareLauncher.launch(new String[]{
+                        "application/octet-stream",
+                        "application/macbinary",
+                        "*/*"
+                });
+            } catch (Exception e) {
+                setFwStatus("No file picker available: " + e.getMessage(), true);
+            }
+        });
+
+        btnFwUpload.setOnClickListener(view -> startFirmwareUpload());
+    }
+
+    private void onFirmwarePicked(@Nullable Uri uri) {
+        if (uri == null) return;
+        try {
+            int flags = Intent.FLAG_GRANT_READ_URI_PERMISSION;
+            requireContext().getContentResolver().takePersistableUriPermission(uri, flags);
+        } catch (SecurityException ignored) {}
+
+        pickedFirmwareUri  = uri;
+        pickedFirmwareName = lastSegment(uri.toString());
+        pickedFirmwareSize = queryFileSize(uri);
+
+        String sizeText = pickedFirmwareSize > 0
+                ? String.format(java.util.Locale.US, " (%.1f KB)", pickedFirmwareSize / 1024.0)
+                : "";
+        fwPickedLabel.setText("Firmware file: " + pickedFirmwareName + sizeText);
+        btnFwUpload.setEnabled(true);
+        setFwStatus("Ready to upload", false);
+    }
+
+    private long queryFileSize(Uri uri) {
+        try (android.database.Cursor c = requireContext().getContentResolver()
+                .query(uri, null, null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                int idx = c.getColumnIndex(android.provider.OpenableColumns.SIZE);
+                if (idx >= 0 && !c.isNull(idx)) return c.getLong(idx);
+            }
+        } catch (Exception ignored) {}
+        return 0L;
+    }
+
+    private void startFirmwareUpload() {
+        if (pickedFirmwareUri == null) {
+            setFwStatus("Pick a firmware .bin first", true);
+            return;
+        }
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            confirmFirmwareUpload(typedIp, "(manual)");
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Flash which ESP32?", p -> {
+            if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                setFwStatus("Profile \"" + p.name + "\" has no device IP", true);
+                return;
+            }
+            alertDeviceIp.setText(p.espHttpIp);
+            confirmFirmwareUpload(p.espHttpIp, p.name);
+        });
+    }
+
+    private void confirmFirmwareUpload(String ip, String label) {
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle("Flash firmware?")
+                .setMessage("Upload\n  " + pickedFirmwareName
+                        + "\nto ESP32 at " + ip + " (" + label + ")?\n\n"
+                        + "The device will reboot into the new firmware after verification. "
+                        + "Do not power off during upload.")
+                .setPositiveButton("Upload", (d, w) -> doFirmwareUpload(ip))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void doFirmwareUpload(String ip) {
+        btnFwUpload.setEnabled(false);
+        btnFwPick.setEnabled(false);
+        fwProgress.setVisibility(View.VISIBLE);
+        fwProgress.setProgress(0);
+        setFwStatus("Uploading to " + ip + "...", false);
+
+        firmwareUploader.start(ip, pickedFirmwareUri, pickedFirmwareSize,
+                new FirmwareUploader.Callback() {
+                    @Override public void onProgress(int percent) {
+                        if (!isAdded()) return;
+                        fwProgress.setProgress(percent);
+                        setFwStatus("Uploading... " + percent + "%", false);
+                    }
+
+                    @Override public void onCompleted() {
+                        if (!isAdded()) return;
+                        fwProgress.setProgress(100);
+                        btnFwPick.setEnabled(true);
+                        btnFwUpload.setEnabled(true);
+                        setFwStatus("Upload complete. ESP32 is rebooting...", false);
+                        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("Firmware uploaded")
+                                .setMessage("The ESP32 is rebooting into the new firmware. "
+                                        + "The MQTT connection will reconnect automatically "
+                                        + "once the device is back online.")
+                                .setPositiveButton("OK", null)
+                                .show();
+                    }
+
+                    @Override public void onError(String message) {
+                        if (!isAdded()) return;
+                        fwProgress.setVisibility(View.GONE);
+                        btnFwPick.setEnabled(true);
+                        btnFwUpload.setEnabled(true);
+                        setFwStatus("Upload failed: " + message, true);
+                    }
+                });
+    }
+
+    private void setFwStatus(String text, boolean error) {
+        fwStatus.setText(text);
+        fwStatus.setTextColor(requireContext().getColor(
+                error ? R.color.radar_red : R.color.radar_green));
     }
 
     // ------------------------------------------------------------------

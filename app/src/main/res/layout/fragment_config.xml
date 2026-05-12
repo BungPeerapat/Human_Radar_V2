@@ -574,6 +574,78 @@
                 android:fontFamily="monospace" />
         </LinearLayout>
 
+        <!-- ESP32 Firmware OTA Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/radar_card"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ESP32 Firmware (OTA)"
+                android:textColor="@color/radar_blue"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="6dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Upload a firmware .bin to the selected ESP32 over WiFi. The device verifies the image, flashes it to the OTA partition and reboots."
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:layout_marginBottom="10dp" />
+
+            <TextView
+                android:id="@+id/fw_picked_label"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Firmware file: (none)"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:singleLine="true"
+                android:ellipsize="middle"
+                android:layout_marginBottom="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_fw_pick"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="PICK FIRMWARE .BIN"
+                android:layout_marginBottom="6dp" />
+
+            <com.google.android.material.progressindicator.LinearProgressIndicator
+                android:id="@+id/fw_progress"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:max="100"
+                android:progress="0"
+                android:visibility="gone"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:id="@+id/fw_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:layout_marginBottom="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_fw_upload"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="UPLOAD TO ESP32"
+                android:enabled="false" />
+        </LinearLayout>
+
         <!-- App Update Card -->
         <LinearLayout
             android:layout_width="match_parent"
