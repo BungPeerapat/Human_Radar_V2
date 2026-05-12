@@ -58,6 +58,9 @@ public class MqttService {
     private Context appContext;
     private AlertPatternPlayer alertPlayer;
     private DeviceStatusAlertManager deviceStatusAlerts;
+    /** When true, live MQTT target frames are not fanned out to TargetListeners
+     *  (used by SessionReplayer to avoid mixing live + replay frames). */
+    private volatile boolean liveTargetMuted = false;
 
     // Listeners
     public interface ConnectionListener {
@@ -193,6 +196,11 @@ public class MqttService {
 
     /** Get the singleton device-status alert manager. Must call {@link #attachContext} first. */
     public DeviceStatusAlertManager getDeviceStatusAlerts() { return deviceStatusAlerts; }
+
+    /** Mute / unmute live MQTT target fan-out. Called by SessionReplayer so the radar UI
+     *  doesn't see live and replayed frames at the same time. */
+    public void setLiveTargetMute(boolean muted) { this.liveTargetMuted = muted; }
+    public boolean isLiveTargetMuted() { return liveTargetMuted; }
 
     /** Convenience: push new alert config into the player (called by ConfigFragment). */
     public void updateAlertConfig(AlertPatternConfig cfg) {
@@ -359,7 +367,10 @@ public class MqttService {
                     int active = AlertPatternPlayer.countActive(data, acfg.maxRangeMm);
                     alertPlayer.onTargetCount(active);
                 }
-                for (TargetListener l : targetListeners) l.onTargetsReceived(data);
+                // Live target fan-out is muted while a replay is running.
+                if (!liveTargetMuted) {
+                    for (TargetListener l : targetListeners) l.onTargetsReceived(data);
+                }
             });
         } catch (Exception e) {
             Log.e(TAG, "Parse targets error", e);

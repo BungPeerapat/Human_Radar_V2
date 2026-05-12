@@ -35,6 +35,7 @@
  */
 
 #include <WiFi.h>
+#include <esp_task_wdt.h>
 
 #include "radar_driver.h"
 #include "config_manager.h"
@@ -68,6 +69,39 @@ static uint8_t countActiveTargets(const RadarFrame& frame, uint16_t maxRangeMm) 
         n++;
     }
     return n;
+}
+
+/**
+ * Apply user-configured DetectionZones from NVS. If any zone is enabled, drop
+ * targets that don't fall inside at least one enabled zone. If none are enabled
+ * the frame passes through unchanged so a user with no zones still sees every
+ * target the sensor reports.
+ */
+static void filterByDetectionZones(RadarFrame& frame, const DetectionZone* zones) {
+    bool anyEnabled = false;
+    for (uint8_t z = 0; z < 3; z++) {
+        if (zones[z].enabled) { anyEnabled = true; break; }
+    }
+    if (!anyEnabled) return;
+
+    for (uint8_t i = 0; i < RADAR_MAX_TARGETS; i++) {
+        RadarTarget& t = frame.targets[i];
+        if (!t.present) continue;
+        bool inside = false;
+        for (uint8_t z = 0; z < 3 && !inside; z++) {
+            if (!zones[z].enabled) continue;
+            int16_t xmin = zones[z].x1 < zones[z].x2 ? zones[z].x1 : zones[z].x2;
+            int16_t xmax = zones[z].x1 > zones[z].x2 ? zones[z].x1 : zones[z].x2;
+            int16_t ymin = zones[z].y1 < zones[z].y2 ? zones[z].y1 : zones[z].y2;
+            int16_t ymax = zones[z].y1 > zones[z].y2 ? zones[z].y1 : zones[z].y2;
+            if (t.x >= xmin && t.x <= xmax && t.y >= ymin && t.y <= ymax) inside = true;
+        }
+        if (!inside) {
+            t.present  = false;
+            t.x = 0; t.y = 0; t.speed = 0; t.distance = 0; t.angle = 0.0f;
+            if (frame.targetCount > 0) frame.targetCount--;
+        }
+    }
 }
 
 /**
@@ -160,6 +194,11 @@ void setup() {
     // Init MQTT (only connects if enabled + configured)
     mqttClient.begin();
 
+    // Task watchdog — auto-reset if loop() hangs for more than 15 seconds.
+    // (Just-in-case safety net for rare lock-ups; healthy frames take <50ms.)
+    esp_task_wdt_init(15, true);
+    esp_task_wdt_add(NULL);
+
     Log::info(TAG_SYSTEM, "========================================");
     Log::info(TAG_SYSTEM, "  Radar:    http://%s", webServer.getIP().c_str());
     Log::info(TAG_SYSTEM, "  Settings: http://%s/settings", webServer.getIP().c_str());
@@ -207,10 +246,14 @@ void loop() {
     // 3. WiFi state edge detection (no-op until status flips)
     monitorWifi();
 
+    // Feed the watchdog every loop iteration.
+    esp_task_wdt_reset();
+
     // 4. Read radar data
     if (radar.update()) {
         // Local copy so we can rewrite ghost slots before broadcasting.
         RadarFrame frame = radar.getLatestFrame();
+        filterByDetectionZones(frame, configManager.get().zones);
         filterGhostTargets(frame);
 
         // Broadcast to all WebSocket clients (browser)

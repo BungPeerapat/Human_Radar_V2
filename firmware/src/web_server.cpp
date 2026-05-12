@@ -3,7 +3,8 @@
 #include "alert_pattern.h"
 #include "logger.h"
 
-#include <Update.h>  // ESP32 OTA helper (built-in to esp32 Arduino core)
+#include <Update.h>      // ESP32 OTA helper (built-in to esp32 Arduino core)
+#include <esp_ota_ops.h> // esp_ota_mark_app_invalid_rollback_and_reboot()
 
 // Global instance
 WebRadarServer webServer;
@@ -208,6 +209,34 @@ void WebRadarServer::setupHTTP() {
         char json[128];
         snprintf(json, sizeof(json), "{\"fw\":\"%s\"}", FW_VERSION);
         _http.send(200, "application/json", json);
+    });
+
+    // Battery monitor — assumes a voltage divider on GPIO34 (input-only). If
+    // the user has no divider wired the reading is meaningless but the
+    // endpoint stays useful for diagnostics ("can the chip read this pin?").
+    _http.on("/api/battery", HTTP_GET, [this]() {
+        const int BATTERY_PIN = 34;
+        int raw = analogRead(BATTERY_PIN);
+        // 12-bit ADC, 3.3V ref, assume 2:1 divider (most common Li-ion setups).
+        float voltage = (raw / 4095.0f) * 3.3f * 2.0f;
+        char json[128];
+        snprintf(json, sizeof(json),
+                 "{\"pin\":%d,\"raw\":%d,\"voltage\":%.2f}",
+                 BATTERY_PIN, raw, voltage);
+        _http.send(200, "application/json", json);
+    });
+
+    // Rollback to the previous OTA partition. The bootloader keeps the old
+    // app image until we explicitly mark the new one as valid; calling
+    // esp_ota_mark_app_invalid_rollback_and_reboot() reboots into the prior
+    // partition. Used by Zone E2 in the app.
+    _http.on("/api/firmware-rollback", HTTP_POST, [this]() {
+        Log::warn(TAG_SYSTEM, "Firmware rollback requested via /api/firmware-rollback");
+        _http.send(200, "application/json", "{\"ok\":true,\"restarting\":true}");
+        delay(500);
+        esp_ota_mark_app_invalid_rollback_and_reboot();
+        // If we get here, rollback failed — fall back to plain restart.
+        ESP.restart();
     });
 
     // Captive portal: redirect unknown URLs to /settings in AP mode

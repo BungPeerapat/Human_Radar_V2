@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.Intent;
 import android.media.RingtoneManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -56,7 +57,17 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
     private final ActivityResultLauncher<Intent> ringtonePicker =
             registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), result -> {
                 if (result.getResultCode() != Activity.RESULT_OK || result.getData() == null) return;
-                Uri uri = result.getData().getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI);
+                // Type-safe getParcelableExtra introduced in API 33. Fall back to the legacy
+                // overload (and suppress its deprecation warning) on older devices.
+                Uri uri;
+                Intent data = result.getData();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    uri = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri.class);
+                } else {
+                    @SuppressWarnings("deprecation")
+                    Uri legacy = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI);
+                    uri = legacy;
+                }
                 if (pendingRule != null) {
                     if (uri != null) {
                         pendingRule.soundUri = uri.toString();

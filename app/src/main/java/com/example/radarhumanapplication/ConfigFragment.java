@@ -85,6 +85,11 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private ActivityResultLauncher<String[]> pickFirmwareLauncher;
     private FirmwareUploader firmwareUploader;
     private com.example.radarhumanapplication.update.FirmwareUpdater firmwareUpdater;
+    private MaterialButton btnFwSkipVersion, btnFwRollback;
+    private MaterialSwitch swBetaChannel;
+    /** Manifest from the most recent CHECK FIRMWARE UPDATE — needed for Skip. */
+    private com.example.radarhumanapplication.update.FirmwareManifest lastCheckedManifest;
+    private static final String FW_SKIP_PREFS = "fw_skip_prefs";
 
     @Override
     public void onCreate(@Nullable Bundle savedInstanceState) {
@@ -153,6 +158,21 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         fwStatus      = v.findViewById(R.id.fw_status);
         firmwareUploader = new FirmwareUploader(requireContext());
         firmwareUpdater  = new com.example.radarhumanapplication.update.FirmwareUpdater(requireContext());
+
+        btnFwSkipVersion = v.findViewById(R.id.btn_fw_skip_version);
+        btnFwRollback    = v.findViewById(R.id.btn_fw_rollback);
+        swBetaChannel    = v.findViewById(R.id.sw_beta_channel);
+        swBetaChannel.setChecked(requireContext()
+                .getSharedPreferences(FW_SKIP_PREFS, 0)
+                .getBoolean("beta", false));
+        swBetaChannel.setOnCheckedChangeListener((b, c) -> {
+            requireContext().getSharedPreferences(FW_SKIP_PREFS, 0)
+                    .edit().putBoolean("beta", c).apply();
+            setFwStatus("Beta channel " + (c ? "enabled" : "disabled")
+                    + " (applies to next CHECK FIRMWARE UPDATE)", false);
+        });
+        btnFwSkipVersion.setOnClickListener(view -> onSkipFirmwareVersion());
+        btnFwRollback.setOnClickListener(view -> onRollbackFirmware());
 
         btnFwCheck.setOnClickListener(view -> onCheckFirmwareUpdate());
 
@@ -303,9 +323,19 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnFwCheck.setEnabled(false);
         btnFwCheck.setText("Checking…");
         setFwStatus("Fetching firmware manifest…", false);
-        firmwareUpdater.check(
-                com.example.radarhumanapplication.update.FirmwareUpdater.DEFAULT_MANIFEST_URL,
-                ip,
+        // Beta channel switches the manifest URL — release.yml uses the
+        // /releases/latest/download/firmware.json redirect for stable; betas
+        // live under a separate path the user can override later.
+        boolean beta = requireContext().getSharedPreferences(FW_SKIP_PREFS, 0)
+                .getBoolean("beta", false);
+        String manifestUrl = beta
+                ? com.example.radarhumanapplication.update.FirmwareUpdater
+                        .DEFAULT_MANIFEST_URL.replace(
+                                "/releases/latest/download/firmware.json",
+                                "/releases/download/beta/firmware.json")
+                : com.example.radarhumanapplication.update.FirmwareUpdater.DEFAULT_MANIFEST_URL;
+
+        firmwareUpdater.check(manifestUrl, ip,
                 (manifest, deviceVersion, error) -> {
                     if (!isAdded()) return;
                     btnFwCheck.setEnabled(true);
@@ -318,11 +348,20 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                                 .show();
                         return;
                     }
+                    lastCheckedManifest = manifest;
+                    String skipped = requireContext()
+                            .getSharedPreferences(FW_SKIP_PREFS, 0)
+                            .getString("skip_fw_version", "");
+                    boolean userSkipped = !skipped.isEmpty()
+                            && skipped.equalsIgnoreCase(manifest.versionName);
+
                     String devLine = deviceVersion.isEmpty()
                             ? "Device (" + label + " @ " + ip + "): unknown (device offline?)"
                             : "Device (" + label + " @ " + ip + "): v" + deviceVersion;
                     String latestLine = "Latest: v" + manifest.versionName
-                            + "  (" + (manifest.sizeBytes / 1024) + " KB)";
+                            + "  (" + (manifest.sizeBytes / 1024) + " KB)"
+                            + (beta ? "  [BETA]" : "")
+                            + (userSkipped ? "  (SKIPPED)" : "");
                     String body = devLine + "\n" + latestLine
                             + "\n\n" + (manifest.releaseNotes == null ? "" : manifest.releaseNotes);
 
@@ -336,9 +375,65 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                                     .setNegativeButton("Close", null);
                     if (!sameVersion) {
                         b.setPositiveButton("Install", (d, w) -> startFirmwareInstall(manifest, ip, label));
+                        b.setNeutralButton("Skip this version", (d, w) -> onSkipFirmwareVersion());
                     }
                     b.show();
                 });
+    }
+
+    private void onSkipFirmwareVersion() {
+        if (lastCheckedManifest == null || lastCheckedManifest.versionName == null
+                || lastCheckedManifest.versionName.isEmpty()) {
+            setFwStatus("Run CHECK FIRMWARE UPDATE first so we know which version to skip",
+                    true);
+            return;
+        }
+        requireContext().getSharedPreferences(FW_SKIP_PREFS, 0)
+                .edit()
+                .putString("skip_fw_version", lastCheckedManifest.versionName)
+                .apply();
+        setFwStatus("Skipped firmware v" + lastCheckedManifest.versionName
+                + " — future auto-checks will ignore it", false);
+    }
+
+    private void onRollbackFirmware() {
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            confirmRollback(typedIp, "(manual)");
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Rollback which ESP32?", p -> {
+            if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                setFwStatus("Profile \"" + p.name + "\" has no device IP", true);
+                return;
+            }
+            alertDeviceIp.setText(p.espHttpIp);
+            confirmRollback(p.espHttpIp, p.name);
+        });
+    }
+
+    private void confirmRollback(String ip, String label) {
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle("Rollback firmware?")
+                .setMessage("Boot ESP32 at " + ip + " (" + label + ") into the previous"
+                        + " firmware partition?\n\nThe device will reboot. If the previous"
+                        + " partition is empty the rollback is a no-op.")
+                .setPositiveButton("Rollback", (d, w) -> doRollback(ip))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void doRollback(String ip) {
+        setFwStatus("Sending rollback to " + ip + "…", false);
+        alertHttp.rollbackFirmware(ip, (ok, err) -> {
+            if (!isAdded()) return;
+            if (Boolean.TRUE.equals(ok)) {
+                setFwStatus("Rollback sent — device rebooting into previous firmware",
+                        false);
+            } else {
+                setFwStatus("Rollback failed: " + err, true);
+            }
+        });
     }
 
     private void startFirmwareInstall(

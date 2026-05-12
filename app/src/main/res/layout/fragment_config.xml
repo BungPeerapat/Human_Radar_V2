@@ -651,6 +651,36 @@
                 android:layout_height="wrap_content"
                 android:text="UPLOAD TO ESP32"
                 android:enabled="false" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="10dp"
+                android:background="@color/radar_input_bg" />
+
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/sw_beta_channel"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Use beta channel for app/firmware updates"
+                android:textColor="@color/white"
+                android:layout_marginBottom="6dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_fw_skip_version"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SKIP CURRENT FIRMWARE VERSION"
+                android:layout_marginBottom="4dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_fw_rollback"
+                style="?attr/materialButtonOutlinedStyle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/radar_red"
+                android:text="ROLLBACK TO PREVIOUS FIRMWARE" />
         </LinearLayout>
 
         <!-- App Update Card -->

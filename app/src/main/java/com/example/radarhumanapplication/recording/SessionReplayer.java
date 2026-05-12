@@ -57,6 +57,14 @@ public class SessionReplayer {
     public String getCurrentFileName() { return currentFileName; }
     public double getCurrentSpeed()    { return speed; }
 
+    /** If true, live MQTT TargetListener fan-out is muted while replay runs. */
+    private volatile boolean autoMuteLiveMqtt = true;
+    /** Recorded so we can re-enable live MQTT on stop() without flipping unrelated state. */
+    private boolean mutedMqttForThisRun = false;
+
+    public void setAutoMuteLiveMqtt(boolean enabled) { this.autoMuteLiveMqtt = enabled; }
+    public boolean isAutoMuteLiveMqtt() { return autoMuteLiveMqtt; }
+
     public synchronized boolean loadAndStart(File f, double speed) {
         stop();
         if (f == null || !f.exists()) return false;
@@ -76,6 +84,12 @@ public class SessionReplayer {
         this.paused = false;
         this.pausedElapsedMs = 0;
         this.currentFileName = f.getName();
+        if (autoMuteLiveMqtt) {
+            com.example.radarhumanapplication.MqttService.getInstance().setLiveTargetMute(true);
+            mutedMqttForThisRun = true;
+        } else {
+            mutedMqttForThisRun = false;
+        }
         notifyState();
         scheduleNext();
         return true;
@@ -102,6 +116,10 @@ public class SessionReplayer {
         index = 0;
         frames = Collections.emptyList();
         main.removeCallbacksAndMessages(null);
+        if (mutedMqttForThisRun) {
+            com.example.radarhumanapplication.MqttService.getInstance().setLiveTargetMute(false);
+            mutedMqttForThisRun = false;
+        }
         if (wasReplaying) {
             currentFileName = "";
             notifyState();
@@ -120,6 +138,45 @@ public class SessionReplayer {
     }
 
     public int getFrameCount() { return frames.size(); }
+    public synchronized int getCurrentFrameIndex() { return index; }
+
+    /** Seek to an arbitrary frame index. Pauses, jumps, and (if currently playing) resumes. */
+    public synchronized void seekTo(int targetIndex) {
+        if (frames.isEmpty()) return;
+        int clamped = Math.max(0, Math.min(frames.size() - 1, targetIndex));
+        boolean wasPlaying = replaying && !paused;
+        main.removeCallbacksAndMessages(null);
+        this.index = clamped;
+        this.firstFrameTsMs = frames.get(0).timestampMs;
+        long offset = (long) ((frames.get(clamped).timestampMs - firstFrameTsMs) / speed);
+        this.playbackBaseRealtimeMs = System.currentTimeMillis() - offset;
+        if (wasPlaying) {
+            paused = false;
+            scheduleNext();
+        } else {
+            paused = true;
+        }
+    }
+
+    /** Per-recording bookmarks (transient — cleared on stop). */
+    private final java.util.List<Integer> bookmarks =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    public java.util.List<Integer> getBookmarks() {
+        return new java.util.ArrayList<>(bookmarks);
+    }
+
+    /** Toggle a bookmark at the current frame index. Returns true if added, false if removed. */
+    public synchronized boolean toggleBookmarkHere() {
+        Integer key = Integer.valueOf(index);
+        if (bookmarks.contains(key)) {
+            bookmarks.remove(key);
+            return false;
+        }
+        bookmarks.add(key);
+        java.util.Collections.sort(bookmarks);
+        return true;
+    }
 
     private void scheduleNext() {
         if (!replaying || paused) return;

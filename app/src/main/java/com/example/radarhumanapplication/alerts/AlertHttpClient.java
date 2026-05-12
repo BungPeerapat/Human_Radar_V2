@@ -80,6 +80,24 @@ public final class AlertHttpClient {
         io.shutdownNow();
     }
 
+    /** POST http://{deviceIp}/api/firmware-rollback — boots the previous OTA partition. */
+    public void rollbackFirmware(String deviceIp, Callback<Boolean> cb) {
+        io.execute(() -> {
+            try {
+                httpPost("http://" + deviceIp + "/api/firmware-rollback", "{}");
+                main.post(() -> cb.onResult(true, null));
+            } catch (Exception e) {
+                // Device reboots before sending response — treat dropped socket as success.
+                String msg = e.getMessage() == null ? "" : e.getMessage();
+                if (msg.contains("EOF") || msg.contains("reset") || msg.contains("closed")) {
+                    main.post(() -> cb.onResult(true, null));
+                } else {
+                    main.post(() -> cb.onResult(false, msg));
+                }
+            }
+        });
+    }
+
     private static String httpGet(String url) throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         try {

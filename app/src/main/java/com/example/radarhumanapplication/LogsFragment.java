@@ -1,9 +1,12 @@
 package com.example.radarhumanapplication;
 
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -31,6 +34,8 @@ public class LogsFragment extends Fragment
     private TextView tvLogCount;
     private MqttService mqtt;
     private EventLogger eventLogger;
+    private View eventFilterBar;
+    private EditText etEventSearch;
 
     @Nullable
     @Override
@@ -55,6 +60,13 @@ public class LogsFragment extends Fragment
         MaterialButtonToggleGroup tgMode = v.findViewById(R.id.tg_log_mode);
         MaterialButton btnTabEsp = v.findViewById(R.id.btn_tab_esp_logs);
         MaterialButton btnTabEvents = v.findViewById(R.id.btn_tab_events);
+        eventFilterBar = v.findViewById(R.id.event_filter_bar);
+        etEventSearch  = v.findViewById(R.id.et_event_search);
+        MaterialButtonToggleGroup tgEventType = v.findViewById(R.id.tg_event_type);
+        MaterialButton btnEventAll   = v.findViewById(R.id.btn_event_all);
+        MaterialButton btnEventEnter = v.findViewById(R.id.btn_event_enter);
+        MaterialButton btnEventLeave = v.findViewById(R.id.btn_event_leave);
+        MaterialButton btnEventMove  = v.findViewById(R.id.btn_event_move);
 
         adapter = new LogAdapter(requireContext());
         rvLogs.setLayoutManager(new LinearLayoutManager(requireContext()));
@@ -101,17 +113,39 @@ public class LogsFragment extends Fragment
 
         mqtt.addLogListener(this);
         eventLogger.addEventListener(this);
+
+        // ── Event filter bar (Zone C) ────────────────────────────────────
+        etEventSearch.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+            @Override public void afterTextChanged(Editable s) {
+                eventAdapter.setSearchQuery(s == null ? "" : s.toString());
+                updateCount();
+            }
+        });
+        tgEventType.check(R.id.btn_event_all);
+        tgEventType.addOnButtonCheckedListener((g, id, checked) -> {
+            if (!checked) return;
+            Event.Type filter = null;
+            if (id == R.id.btn_event_enter) filter = Event.Type.ENTER;
+            else if (id == R.id.btn_event_leave) filter = Event.Type.LEAVE;
+            else if (id == R.id.btn_event_move)  filter = Event.Type.MOVE;
+            eventAdapter.setTypeFilter(filter);
+            updateCount();
+        });
     }
 
     private void showEspLogs() {
         rvLogs.setVisibility(View.VISIBLE);
         rvEvents.setVisibility(View.GONE);
+        if (eventFilterBar != null) eventFilterBar.setVisibility(View.GONE);
         updateCount();
     }
 
     private void showEvents() {
         rvLogs.setVisibility(View.GONE);
         rvEvents.setVisibility(View.VISIBLE);
+        if (eventFilterBar != null) eventFilterBar.setVisibility(View.VISIBLE);
         updateCount();
     }
 

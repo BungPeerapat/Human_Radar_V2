@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_task_wdt.h>
 
 #include "radar_driver.h"
 #include "config_manager.h"
@@ -33,6 +34,33 @@ static uint8_t countActiveTargets(const RadarFrame& frame, uint16_t maxRangeMm) 
         n++;
     }
     return n;
+}
+
+// Apply user-configured DetectionZones from NVS. See Human_Radar_V2.ino.
+static void filterByDetectionZones(RadarFrame& frame, const DetectionZone* zones) {
+    bool anyEnabled = false;
+    for (uint8_t z = 0; z < 3; z++) {
+        if (zones[z].enabled) { anyEnabled = true; break; }
+    }
+    if (!anyEnabled) return;
+    for (uint8_t i = 0; i < RADAR_MAX_TARGETS; i++) {
+        RadarTarget& t = frame.targets[i];
+        if (!t.present) continue;
+        bool inside = false;
+        for (uint8_t z = 0; z < 3 && !inside; z++) {
+            if (!zones[z].enabled) continue;
+            int16_t xmin = zones[z].x1 < zones[z].x2 ? zones[z].x1 : zones[z].x2;
+            int16_t xmax = zones[z].x1 > zones[z].x2 ? zones[z].x1 : zones[z].x2;
+            int16_t ymin = zones[z].y1 < zones[z].y2 ? zones[z].y1 : zones[z].y2;
+            int16_t ymax = zones[z].y1 > zones[z].y2 ? zones[z].y1 : zones[z].y2;
+            if (t.x >= xmin && t.x <= xmax && t.y >= ymin && t.y <= ymax) inside = true;
+        }
+        if (!inside) {
+            t.present  = false;
+            t.x = 0; t.y = 0; t.speed = 0; t.distance = 0; t.angle = 0.0f;
+            if (frame.targetCount > 0) frame.targetCount--;
+        }
+    }
 }
 
 // Drop "ghost" targets the LD2450 keeps reporting at the exact last (x,y) after
@@ -103,6 +131,10 @@ void setup() {
 
     mqttClient.begin();
 
+    // Task watchdog — auto-reset if loop() hangs for more than 15 seconds.
+    esp_task_wdt_init(15, true);
+    esp_task_wdt_add(NULL);
+
     Log::info(TAG_SYSTEM, "========================================");
     Log::info(TAG_SYSTEM, "  Radar:    http://%s", webServer.getIP().c_str());
     Log::info(TAG_SYSTEM, "  Settings: http://%s/settings", webServer.getIP().c_str());
@@ -143,9 +175,11 @@ void loop() {
     webServer.loop();
     mqttClient.loop();
     monitorWifi();
+    esp_task_wdt_reset();
 
     if (radar.update()) {
         RadarFrame frame = radar.getLatestFrame();
+        filterByDetectionZones(frame, configManager.get().zones);
         filterGhostTargets(frame);
         webServer.broadcastFrame(frame, radar.getFrameCount(), radar.getErrorCount());
         mqttClient.publishFrame(frame, radar.getFrameCount(), radar.getErrorCount());

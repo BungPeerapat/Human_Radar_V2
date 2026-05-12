@@ -96,12 +96,16 @@ public final class FirmwareUploader {
             conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setDoOutput(true);
             conn.setUseCaches(false);
-            conn.setChunkedStreamingMode(0);
             conn.setRequestProperty("Connection", "close");
             conn.setRequestProperty("Content-Type",
                     "multipart/form-data; boundary=" + boundary);
+            // HttpURLConnection allows only ONE streaming mode. Prefer fixed-length
+            // when we know the size (ESP32 WebServer handles multipart far better with
+            // a real Content-Length); fall back to chunked when size is unknown.
             if (contentLength > 0 && contentLength <= Integer.MAX_VALUE) {
                 conn.setFixedLengthStreamingMode(contentLength);
+            } else {
+                conn.setChunkedStreamingMode(0);
             }
 
             Log.i(TAG, "OTA upload start: " + url + " (" + total + " bytes)");
