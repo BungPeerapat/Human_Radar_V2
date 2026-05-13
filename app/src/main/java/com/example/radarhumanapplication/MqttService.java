@@ -355,6 +355,47 @@ public class MqttService {
     }
 
     /**
+     * Permanently delete a device from the MQTT broker by clearing its
+     * retained {@code /status} and {@code /info} messages. Without this,
+     * removed devices reappear in the hub on every reconnect because the
+     * broker replays the retained messages on subscribe.
+     *
+     * <p>Sends zero-byte retained payloads — the MQTT 3.1.1 spec defines
+     * an empty retained message as "delete the retained message for this
+     * topic". Also clears the local discovery state.
+     *
+     * <p>Note: if the device itself is still online and reconnects, it
+     * will republish its own retained status almost immediately — so
+     * this is most useful for stale/renamed devices that are gone.
+     */
+    public void deleteDeviceFromBroker(String deviceName) {
+        if (deviceName == null || deviceName.isEmpty()) return;
+        if (client == null || !connected) {
+            removeDiscoveredDevice(deviceName);
+            return;
+        }
+        clearRetained("humanradar/" + deviceName + "/status");
+        clearRetained("humanradar/" + deviceName + "/info");
+        removeDiscoveredDevice(deviceName);
+    }
+
+    private void clearRetained(String topicStr) {
+        try {
+            client.publishWith()
+                    .topic(topicStr)
+                    .payload(new byte[0])
+                    .retain(true)
+                    .send()
+                    .whenComplete((pub, err) -> {
+                        if (err != null) Log.e(TAG, "Clear retained failed: " + topicStr, err);
+                        else Log.i(TAG, "Cleared retained: " + topicStr);
+                    });
+        } catch (Exception e) {
+            Log.w(TAG, "clearRetained threw for " + topicStr, e);
+        }
+    }
+
+    /**
      * Public dispatch hook used by {@link com.example.radarhumanapplication.recording.SessionReplayer}
      * to feed replayed frames into the same fan-out as live MQTT. Always runs on the main
      * thread (callers must marshal); does NOT touch {@link #liveTargetMuted} so the caller

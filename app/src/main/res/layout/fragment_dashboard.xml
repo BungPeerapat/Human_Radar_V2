@@ -56,8 +56,24 @@
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
                     android:paddingHorizontal="10dp"
+                    android:layout_marginEnd="4dp"
                     android:minHeight="32dp"
                     app:icon="@android:drawable/ic_menu_recent_history"
+                    app:iconSize="14dp"
+                    app:iconPadding="4dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_purge_offline"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Purge"
+                    android:textSize="11sp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="10dp"
+                    android:minHeight="32dp"
+                    app:icon="@android:drawable/ic_menu_delete"
                     app:iconSize="14dp"
                     app:iconPadding="4dp" />
             </LinearLayout>

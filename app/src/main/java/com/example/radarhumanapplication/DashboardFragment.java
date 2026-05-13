@@ -62,6 +62,7 @@ public class DashboardFragment extends Fragment
     private RecyclerView rvDeviceHub;
     private TextView tvDeviceHubCount, tvDeviceHubEmpty;
     private MaterialButton btnHealthCheckAll;
+    private MaterialButton btnPurgeOffline;
     private DeviceHubAdapter deviceHubAdapter;
     private static final String DEVICE_HUB_PREFS = "device_hub_prefs";
     private static final String DEVICE_HUB_PINNED_KEY = "pinned_devices";
@@ -130,12 +131,14 @@ public class DashboardFragment extends Fragment
         tvDeviceHubCount   = v.findViewById(R.id.tv_device_hub_count);
         tvDeviceHubEmpty   = v.findViewById(R.id.tv_device_hub_empty);
         btnHealthCheckAll  = v.findViewById(R.id.btn_health_check_all);
+        btnPurgeOffline    = v.findViewById(R.id.btn_purge_offline);
         rvDeviceHub.setLayoutManager(new LinearLayoutManager(requireContext()));
         deviceHubAdapter = new DeviceHubAdapter(requireContext(),
                 this::onDeviceHubTap,
                 this::onDeviceHubLongPress);
         rvDeviceHub.setAdapter(deviceHubAdapter);
         btnHealthCheckAll.setOnClickListener(x -> onHealthCheckAllClick());
+        btnPurgeOffline.setOnClickListener(x -> onPurgeOfflineClick());
         refreshDeviceHub();
 
         loadPrefs();
@@ -273,7 +276,7 @@ public class DashboardFragment extends Fragment
         menu.add(0, 2, 1, "View details");
         menu.add(0, 3, 2, "🩺 Check health");
         menu.add(0, 4, 3, "🔌 Restart device");
-        menu.add(0, 5, 4, "🗑️ Remove from hub");
+        menu.add(0, 5, 4, "🗑️ Delete from broker…");
         pm.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 1: togglePinned(d.deviceName); return true;
@@ -330,23 +333,90 @@ public class DashboardFragment extends Fragment
 
     private void confirmRemoveDevice(MqttService.DiscoveredDevice d) {
         if (!isAdded()) return;
+        // Two-option dialog: local-only removal (device reappears next time
+        // it publishes) vs broker delete (clears retained /status + /info so
+        // a renamed/dead device stops haunting the hub).
         new AlertDialog.Builder(requireContext())
                 .setTitle("Remove " + d.deviceName + "?")
-                .setMessage("Drop this device from the hub list and from saved "
-                        + "Connection Profiles. The device itself is unaffected — "
-                        + "it will reappear automatically when it publishes again.")
-                .setPositiveButton("Remove", (dlg, w) -> {
-                    mqtt.removeDiscoveredDevice(d.deviceName);
+                .setMessage("Remove from local hub only — device will reappear "
+                        + "when it next publishes.\n\n"
+                        + "OR delete from broker — clears retained MQTT "
+                        + "messages so stale / renamed devices stop coming "
+                        + "back on every reconnect. (The device itself is "
+                        + "unaffected; if it's still alive it'll republish.)")
+                .setPositiveButton("Delete from broker",
+                        (dlg, w) -> performDeviceRemoval(d, /*purgeBroker=*/ true))
+                .setNeutralButton("Local only",
+                        (dlg, w) -> performDeviceRemoval(d, /*purgeBroker=*/ false))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void performDeviceRemoval(MqttService.DiscoveredDevice d, boolean purgeBroker) {
+        if (purgeBroker) {
+            mqtt.deleteDeviceFromBroker(d.deviceName);
+        } else {
+            mqtt.removeDiscoveredDevice(d.deviceName);
+        }
+        java.util.Set<String> pinned = loadPinnedDevices();
+        if (pinned.remove(d.deviceName)) savePinnedDevices(pinned);
+        // Drop matching saved profiles too.
+        ProfileManager pm = ProfileManager.getInstance();
+        for (ConnectionProfile p : pm.getProfiles()) {
+            if (p != null && d.deviceName.equals(p.deviceName)) {
+                pm.deleteProfile(p.id);
+            }
+        }
+        refreshDeviceHub();
+        Toast.makeText(requireContext(),
+                purgeBroker
+                        ? "Deleted " + d.deviceName + " from broker"
+                        : "Removed " + d.deviceName + " (local only)",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    /** Hub-header button: clear every offline device's retained MQTT messages
+     *  in one shot. Useful after renaming firmware on several boards. */
+    private void onPurgeOfflineClick() {
+        if (!isAdded()) return;
+        if (!mqtt.isConnected()) {
+            Toast.makeText(requireContext(),
+                    "Connect to MQTT first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        java.util.List<MqttService.DiscoveredDevice> offline = new java.util.ArrayList<>();
+        for (MqttService.DiscoveredDevice d : mqtt.getDiscoveredDevices()) {
+            if (d != null && !d.isOnline()) offline.add(d);
+        }
+        if (offline.isEmpty()) {
+            Toast.makeText(requireContext(),
+                    "No offline devices to purge", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        StringBuilder names = new StringBuilder();
+        for (MqttService.DiscoveredDevice d : offline) {
+            names.append("• ").append(d.deviceName).append('\n');
+        }
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Purge " + offline.size() + " offline device"
+                        + (offline.size() == 1 ? "" : "s") + "?")
+                .setMessage("This clears retained MQTT messages for:\n\n"
+                        + names + "\nThey'll only reappear if the actual "
+                        + "device republishes — usually they're gone for good.")
+                .setPositiveButton("Purge", (dlg, w) -> {
+                    int n = 0;
                     java.util.Set<String> pinned = loadPinnedDevices();
-                    if (pinned.remove(d.deviceName)) savePinnedDevices(pinned);
-                    // Drop matching saved profiles too.
-                    ProfileManager pm = ProfileManager.getInstance();
-                    for (ConnectionProfile p : pm.getProfiles()) {
-                        if (p != null && d.deviceName.equals(p.deviceName)) {
-                            pm.deleteProfile(p.id);
-                        }
+                    boolean pinnedDirty = false;
+                    for (MqttService.DiscoveredDevice d : offline) {
+                        mqtt.deleteDeviceFromBroker(d.deviceName);
+                        if (pinned.remove(d.deviceName)) pinnedDirty = true;
+                        n++;
                     }
+                    if (pinnedDirty) savePinnedDevices(pinned);
                     refreshDeviceHub();
+                    Toast.makeText(requireContext(),
+                            "Purged " + n + " device" + (n == 1 ? "" : "s")
+                                    + " from broker", Toast.LENGTH_SHORT).show();
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
