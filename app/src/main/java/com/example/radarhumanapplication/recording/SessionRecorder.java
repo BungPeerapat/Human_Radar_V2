@@ -56,7 +56,13 @@ public class SessionRecorder implements MqttService.TargetListener {
             return false;
         }
         SimpleDateFormat fmt = new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US);
-        String name = "rec_" + fmt.format(new Date()) + ".jsonl";
+        // Tag the filename with the active device so the Replay list groups recordings
+        // by source. Sanitise the device name (only [A-Za-z0-9_-], max 24 chars) so the
+        // filename stays valid on every platform.
+        String devTag = sanitiseDeviceName(MqttService.getInstance().getDeviceName());
+        String name = "rec_" + fmt.format(new Date())
+                + (devTag.isEmpty() ? "" : ("_" + devTag))
+                + ".jsonl";
         File f = new File(dir, name);
         try {
             writer = new BufferedWriter(new OutputStreamWriter(
@@ -158,5 +164,17 @@ public class SessionRecorder implements MqttService.TargetListener {
         if (ext != null) return ext;
         // Fallback to internal cache; useful in tests.
         return new File(ctx.getFilesDir(), DIR);
+    }
+
+    /** Strip everything but [A-Za-z0-9_-] and clamp to 24 chars so the device
+     *  name can be safely embedded in a filename across platforms. */
+    private static String sanitiseDeviceName(String name) {
+        if (name == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < name.length() && sb.length() < 24; i++) {
+            char c = name.charAt(i);
+            if (Character.isLetterOrDigit(c) || c == '_' || c == '-') sb.append(c);
+        }
+        return sb.toString();
     }
 }

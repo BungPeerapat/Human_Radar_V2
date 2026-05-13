@@ -210,6 +210,36 @@ public class MqttService {
         }
     }
 
+    /**
+     * Quietly switch the active device when the configured one is silent at
+     * connect time but exactly one other device is online. Avoids the "I
+     * connected to MQTT but everything still says offline" trap when the user
+     * just reflashed the ESP32 with a new device name. Skips if any of:
+     *  - configured device's /status retained message arrived → all good
+     *  - 0 or >1 online discovered → ambiguous, let the user pick
+     */
+    private void maybeAutoPickActive() {
+        if (!connected) return;
+        String active = deviceName;
+        if (active == null || active.isEmpty()) return;
+        DiscoveredDevice activeDev = discoveredDevices.get(active);
+        if (activeDev != null && activeDev.isOnline()) return;
+        DiscoveredDevice onlyOnline = null;
+        int onlineCount = 0;
+        for (DiscoveredDevice d : discoveredDevices.values()) {
+            if (d != null && d.isOnline()) {
+                onlineCount++;
+                onlyOnline = d;
+            }
+        }
+        if (onlineCount == 1 && onlyOnline != null
+                && !active.equals(onlyOnline.deviceName)) {
+            Log.i(TAG, "Auto-picking only-online device: "
+                    + onlyOnline.deviceName + " (was " + active + ")");
+            switchActiveDevice(onlyOnline.deviceName);
+        }
+    }
+
     /** Update the {@link ProfileManager} active profile to match the new device. */
     private void syncActiveProfile(String newDeviceName) {
         try {
@@ -357,6 +387,11 @@ public class MqttService {
                                     l.onConnected();
                                 }
                             });
+                            // Smart auto-pick: 3 s after we connect, if the configured
+                            // device is still silent (no /status retained) but EXACTLY
+                            // ONE other device is online, switch to it. Multiple online
+                            // devices → leave the choice to the user.
+                            mainHandler.postDelayed(this::maybeAutoPickActive, 3000);
                         }
                     });
         } catch (Exception e) {
@@ -487,6 +522,12 @@ public class MqttService {
         try {
             String json = new String(publish.getPayloadAsBytes(), StandardCharsets.UTF_8);
             JsonObject data = gson.fromJson(json, JsonObject.class);
+            // Tag every frame with the device name extracted from the MQTT topic so
+            // downstream consumers (AlertManager per-device rules, RadarView's
+            // device chip, SessionRecorder tagged files) can route correctly
+            // without needing a parallel signal path.
+            String src = extractDeviceFromTopic(publish.getTopic().toString());
+            if (src != null && !src.isEmpty()) data.addProperty("_dev", src);
             lastTargetData = data;
             mainHandler.post(() -> {
                 // Feed the alert pattern player (independent of UI listeners)
@@ -503,6 +544,14 @@ public class MqttService {
         } catch (Exception e) {
             Log.e(TAG, "Parse targets error", e);
         }
+    }
+
+    /** humanradar/&lt;name&gt;/targets -&gt; "&lt;name&gt;"; returns "" if the topic format is unexpected. */
+    private static String extractDeviceFromTopic(String topic) {
+        if (topic == null) return "";
+        String[] parts = topic.split("/");
+        if (parts.length < 3) return "";
+        return parts[1];
     }
 
     private void handleStatus(Mqtt3Publish publish) {

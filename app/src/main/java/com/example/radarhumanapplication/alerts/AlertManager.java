@@ -176,8 +176,18 @@ public class AlertManager implements MqttService.TargetListener {
         }
         if (targets == null) return;
 
+        // Per-device routing: MqttService tags frames with "_dev" = source device name.
+        // Rules with a non-empty rule.deviceName are restricted to matching frames.
+        String frameDev = "";
+        if (data.has("_dev") && !data.get("_dev").isJsonNull()) {
+            try { frameDev = data.get("_dev").getAsString(); } catch (Exception ignored) {}
+        }
         for (AlertRule rule : snapshot) {
             if (!rule.enabled) continue;
+            if (rule.deviceName != null && !rule.deviceName.isEmpty()
+                    && !rule.deviceName.equals(frameDev)) {
+                continue;   // rule is scoped to a different device
+            }
             evaluateRule(rule, targets);
         }
     }

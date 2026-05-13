@@ -70,6 +70,8 @@ public class RadarFragment extends Fragment
     private View uxOverlay;
     private View replayBadge;
     private TextView replayBadgeDetail;
+    private View activeDeviceChip;
+    private TextView activeDeviceName, activeDeviceDot;
     private ImageButton btnKeepScreenOn, btnManualRotate, btnLockOrientation, btnNightMode, btnSnapshot;
     private boolean isFullscreen = false;
     private MqttService mqtt;
@@ -112,6 +114,11 @@ public class RadarFragment extends Fragment
         btnSnapshot = v.findViewById(R.id.btn_snapshot);
         replayBadge = v.findViewById(R.id.replay_badge);
         replayBadgeDetail = v.findViewById(R.id.replay_badge_detail);
+        activeDeviceChip = v.findViewById(R.id.active_device_chip);
+        activeDeviceName = v.findViewById(R.id.active_device_name);
+        activeDeviceDot  = v.findViewById(R.id.active_device_dot);
+        activeDeviceChip.setOnClickListener(view -> openDevicePickerForRadar());
+        refreshActiveDeviceChip();
 
         radarView.setInfoListener((targets, frameCount, errorCount, fps) -> {
             if (!isAdded()) return;
@@ -168,6 +175,30 @@ public class RadarFragment extends Fragment
     private static String trimSpeed(double s) {
         if (s == Math.floor(s)) return String.valueOf((int) s);
         return String.format(Locale.US, "%.2f", s).replaceAll("0+$", "").replaceAll("\\.$", "");
+    }
+
+    /** Update the active-device chip to reflect MqttService's current target. */
+    private void refreshActiveDeviceChip() {
+        if (activeDeviceName == null) return;
+        String name = mqtt.getDeviceName();
+        activeDeviceName.setText(name == null || name.isEmpty() ? "(no device)" : name);
+        boolean online = "online".equalsIgnoreCase(deviceStatus);
+        activeDeviceDot.setText(online ? "●" : "○");
+        activeDeviceDot.setTextColor(getColor(
+                online ? R.color.radar_green : R.color.radar_red));
+    }
+
+    /** Tap on the chip — open the device picker and route the choice through
+     *  MqttService.switchActiveDevice so per-device subscriptions refresh. */
+    private void openDevicePickerForRadar() {
+        com.example.radarhumanapplication.profiles.DevicePickerDialog.show(
+                requireContext(),
+                "Pick device for radar",
+                p -> {
+                    if (p == null || p.deviceName == null || p.deviceName.isEmpty()) return;
+                    mqtt.switchActiveDevice(p.deviceName);
+                    refreshActiveDeviceChip();
+                });
     }
 
     @Override
@@ -285,6 +316,7 @@ public class RadarFragment extends Fragment
     }
 
     private void updateConnectionStatus() {
+        refreshActiveDeviceChip();
         if (!mqtt.isConnected()) {
             tvRadarStatus.setText("DISCONNECTED");
             tvRadarStatus.setTextColor(getColor(R.color.radar_red));

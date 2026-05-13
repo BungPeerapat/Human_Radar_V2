@@ -185,7 +185,36 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
         MaterialSwitch swSpeak = root.findViewById(R.id.sw_speak);
         TextInputEditText etSpoken = root.findViewById(R.id.et_spoken_text);
         TextInputEditText etCooldown = root.findViewById(R.id.et_cooldown);
+        com.google.android.material.textfield.MaterialAutoCompleteTextView acDevice =
+                root.findViewById(R.id.ac_device_name);
         pendingSoundLabel = tvSound;
+
+        // Device-scope dropdown — populated from MQTT discovery. Free-text is
+        // allowed so users can target a device that's not online yet, and the
+        // empty value still means "any device" (legacy rules).
+        java.util.List<String> deviceOptions = new java.util.ArrayList<>();
+        deviceOptions.add(""); // "any device"
+        java.util.TreeSet<String> uniq = new java.util.TreeSet<>();
+        for (MqttService.DiscoveredDevice d :
+                MqttService.getInstance().getDiscoveredDevices()) {
+            if (d != null && d.deviceName != null && !d.deviceName.isEmpty()) {
+                uniq.add(d.deviceName);
+            }
+        }
+        deviceOptions.addAll(uniq);
+        // Replace "" with a readable label so the dropdown shows "(any device)"
+        // but the value we actually save back to draft.deviceName is "".
+        final String anyLabel = "(any device)";
+        java.util.List<String> labels = new java.util.ArrayList<>();
+        for (String s : deviceOptions) labels.add(s.isEmpty() ? anyLabel : s);
+        acDevice.setAdapter(new ArrayAdapter<>(requireContext(),
+                android.R.layout.simple_list_item_1, labels));
+        acDevice.setText(
+                draft.deviceName == null || draft.deviceName.isEmpty()
+                        ? anyLabel : draft.deviceName,
+                false);
+        acDevice.setOnClickListener(v -> acDevice.showDropDown());
+        acDevice.setOnFocusChangeListener((v, has) -> { if (has) acDevice.showDropDown(); });
 
         // Operator spinner
         String[] opSymbols = {AlertOperator.LT.symbol, AlertOperator.LE.symbol,
@@ -277,6 +306,11 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
                     if (draft.spokenText.isEmpty()) draft.spokenText = AlertRule.DEFAULT_SPOKEN_TEXT;
                     draft.cooldownSeconds = parseCooldownSeconds(
                             etCooldown.getText() == null ? "" : etCooldown.getText().toString());
+                    // Map the dropdown's "(any device)" label back to an empty string
+                    // so AlertManager treats it as a wildcard.
+                    String chosenDev = acDevice.getText() == null
+                            ? "" : acDevice.getText().toString().trim();
+                    draft.deviceName = chosenDev.equals(anyLabel) ? "" : chosenDev;
                     if (isNew) {
                         AlertManager.getInstance().addRule(draft);
                     } else {
@@ -380,6 +414,7 @@ public class AlertsFragment extends Fragment implements AlertManager.RulesChange
         r.spokenText = src.spokenText;
         r.ttsLanguageTag = src.ttsLanguageTag;
         r.cooldownSeconds = src.cooldownSeconds;
+        r.deviceName = src.deviceName == null ? "" : src.deviceName;
         return r;
     }
 }

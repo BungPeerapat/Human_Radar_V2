@@ -87,6 +87,13 @@ public class AlertRule {
     @SerializedName("cooldownSeconds")
     public int cooldownSeconds = 0;
 
+    /**
+     * Restrict this rule to frames coming from a specific device, by name.
+     * Empty / null = "any device" (legacy behaviour for rules saved before v1.0.32).
+     */
+    @SerializedName("deviceName")
+    public String deviceName = "";
+
     public AlertRule() {}
 
     public String displayName() {

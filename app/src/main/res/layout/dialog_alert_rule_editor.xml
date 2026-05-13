@@ -238,5 +238,19 @@
                 android:text="0" />
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- ===== Device scope ===== -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Device (leave empty for ANY device)"
+            android:layout_marginTop="8dp"
+            style="@style/Widget.Material3.TextInputLayout.OutlinedBox.Dense.ExposedDropdownMenu">
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/ac_device_name"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="text" />
+        </com.google.android.material.textfield.TextInputLayout>
+
     </LinearLayout>
 </ScrollView>
