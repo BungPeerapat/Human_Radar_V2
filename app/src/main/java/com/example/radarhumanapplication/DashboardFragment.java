@@ -46,7 +46,11 @@ public class DashboardFragment extends Fragment
                    MqttService.CmdAckListener,
                    MqttService.DiscoveryListener {
 
-    private TextInputEditText etHost, etPort, etDeviceName, etUsername, etPassword;
+    private TextInputEditText etHost, etPort, etUsername, etPassword;
+    /** Device-name field is an exposed-dropdown of currently-discovered
+     *  project devices. Still free-typeable when no devices have shown up. */
+    private com.google.android.material.textfield.MaterialAutoCompleteTextView etDeviceName;
+    private ArrayAdapter<String> deviceNameAdapter;
     private MaterialButton btnConnect;
     private TextView tvMqttStatus, tvDeviceStatus;
     private TextView tvTarget1, tvTarget2, tvTarget3, tvFrameInfo;
@@ -139,7 +143,17 @@ public class DashboardFragment extends Fragment
         rvDeviceHub.setAdapter(deviceHubAdapter);
         btnHealthCheckAll.setOnClickListener(x -> onHealthCheckAllClick());
         btnPurgeOffline.setOnClickListener(x -> onPurgeOfflineClick());
+        // Device-name dropdown: backing adapter that's refreshed every time the
+        // discovery feed changes. Tap the field (threshold=0) to see the list.
+        deviceNameAdapter = new ArrayAdapter<>(requireContext(),
+                android.R.layout.simple_dropdown_item_1line, new ArrayList<>());
+        etDeviceName.setAdapter(deviceNameAdapter);
+        etDeviceName.setOnClickListener(view -> {
+            if (etDeviceName.isPopupShowing()) etDeviceName.dismissDropDown();
+            else etDeviceName.showDropDown();
+        });
         refreshDeviceHub();
+        refreshDeviceNameDropdown();
 
         loadPrefs();
         updateConnectButton();
@@ -190,7 +204,30 @@ public class DashboardFragment extends Fragment
     public void onDeviceDiscovered(String deviceName, String status, long lastSeenMs) {
         if (!isAdded()) return;
         refreshDeviceHub();
+        refreshDeviceNameDropdown();
         maybeSuggestSwitch();
+    }
+
+    /** Pull every project-namespaced device from MqttService and load them
+     *  into the Device-Name dropdown. Online devices appear first; the user
+     *  can still free-type an unseen name. */
+    private void refreshDeviceNameDropdown() {
+        if (deviceNameAdapter == null) return;
+        java.util.List<MqttService.DiscoveredDevice> snap = mqtt.getDiscoveredDevices();
+        java.util.List<String> online  = new java.util.ArrayList<>();
+        java.util.List<String> offline = new java.util.ArrayList<>();
+        java.util.HashSet<String> seen = new java.util.HashSet<>();
+        for (MqttService.DiscoveredDevice d : snap) {
+            if (d == null || d.deviceName == null || d.deviceName.isEmpty()) continue;
+            if (!seen.add(d.deviceName)) continue;
+            (d.isOnline() ? online : offline).add(d.deviceName);
+        }
+        java.util.List<String> all = new java.util.ArrayList<>(online.size() + offline.size());
+        all.addAll(online);
+        all.addAll(offline);
+        deviceNameAdapter.clear();
+        deviceNameAdapter.addAll(all);
+        deviceNameAdapter.notifyDataSetChanged();
     }
 
     /**
@@ -979,6 +1016,12 @@ public class DashboardFragment extends Fragment
     }
 
     private String getText(TextInputEditText et) {
+        return et.getText() != null ? et.getText().toString().trim() : "";
+    }
+
+    /** Overload for the device-name exposed-dropdown, which is an
+     *  {@link android.widget.AutoCompleteTextView}, not a {@link TextInputEditText}. */
+    private String getText(android.widget.AutoCompleteTextView et) {
         return et.getText() != null ? et.getText().toString().trim() : "";
     }
 

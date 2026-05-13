@@ -53,9 +53,37 @@ public final class FirmwareUpdater {
 
     public interface InstallCallback {
         void onProgress(int phasePercent, String phaseLabel);
-        void onInstalled();
+        /** Upload finished, ESP32 is rebooting. Caller should now show a "waiting
+         *  for the device to come back online" indicator and call
+         *  {@link FirmwareUpdater#verifyOnMqtt} (or its own equivalent) to
+         *  confirm the new firmware is running. */
+        void onUploaded();
+        /** Reboot verified via MQTT — the device returned with the expected
+         *  firmware version. Carries the device's own info dump if provided. */
+        void onInstalled(MqttVerifyResult info);
         void onError(String message);
     }
+
+    /** Subset of fields the firmware publishes in {@code humanradar/<name>/info}
+     *  after rebooting into the new build. */
+    public static final class MqttVerifyResult {
+        public final String deviceName;
+        public final String fw;
+        public final String ip;
+        public final String mac;
+        public final boolean versionMatches;
+        public MqttVerifyResult(String deviceName, String fw, String ip,
+                                String mac, boolean versionMatches) {
+            this.deviceName = deviceName == null ? "" : deviceName;
+            this.fw         = fw == null ? "" : fw;
+            this.ip         = ip == null ? "" : ip;
+            this.mac        = mac == null ? "" : mac;
+            this.versionMatches = versionMatches;
+        }
+    }
+
+    /** Default wait for the device to republish {@code /info} on the new fw. */
+    public static final long DEFAULT_MQTT_VERIFY_TIMEOUT_MS = 60_000;
 
     private final Context appContext;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -216,13 +244,99 @@ public final class FirmwareUpdater {
             }
             @Override public void onCompleted() {
                 safeDelete(binFile);
-                main.post(cb::onInstalled);
+                main.post(cb::onUploaded);
             }
             @Override public void onError(String message) {
                 safeDelete(binFile);
                 main.post(() -> cb.onError(message));
             }
         });
+    }
+
+    /**
+     * Wait for the ESP32 to come back on MQTT after an OTA. The firmware
+     * publishes retained {@code humanradar/<name>/info} on every boot with
+     * its current {@code fw} field — that's our confirmation.
+     *
+     * <p>Snapshots the existing info state at call time so a stale retained
+     * message from the old version doesn't trigger a false positive: only
+     * an info message with {@code fw == expectedVersion} that arrives AFTER
+     * this call counts as a verification.
+     */
+    public void verifyOnMqtt(String expectedDeviceName, String expectedVersion,
+                             long timeoutMs, InstallCallback cb) {
+        if (expectedDeviceName == null || expectedDeviceName.isEmpty()) {
+            main.post(() -> cb.onError("Cannot verify — device name unknown"));
+            return;
+        }
+        final com.example.radarhumanapplication.MqttService mqtt =
+                com.example.radarhumanapplication.MqttService.getInstance();
+        final long startedAt = System.currentTimeMillis();
+
+        // Already on the new version? (Rare but possible if /info beat the OTA
+        // upload response back to us — accept and move on.)
+        for (com.example.radarhumanapplication.MqttService.DiscoveredDevice d
+                : mqtt.getDiscoveredDevices()) {
+            if (d == null) continue;
+            if (expectedDeviceName.equals(d.deviceName)
+                    && expectedVersion != null
+                    && expectedVersion.equals(d.fw)
+                    && d.lastSeenMs >= startedAt - 1000) {
+                main.post(() -> cb.onInstalled(new MqttVerifyResult(
+                        d.deviceName, d.fw, d.ip, d.mac, true)));
+                return;
+            }
+        }
+
+        final com.example.radarhumanapplication.MqttService.DiscoveryListener[] holder =
+                new com.example.radarhumanapplication.MqttService.DiscoveryListener[1];
+        final Runnable[] timeoutHolder = new Runnable[1];
+        final boolean[] settled = {false};
+
+        holder[0] = (deviceName, status, lastSeenMs) -> {
+            synchronized (holder) {
+                if (settled[0]) return;
+                if (!expectedDeviceName.equals(deviceName)) return;
+                com.example.radarhumanapplication.MqttService.DiscoveredDevice d =
+                        findDevice(mqtt, deviceName);
+                if (d == null || d.fw == null || d.fw.isEmpty()) return;
+                boolean match = expectedVersion == null
+                        || expectedVersion.isEmpty()
+                        || expectedVersion.equals(d.fw);
+                if (!match) return;
+                settled[0] = true;
+            }
+            mqtt.removeDiscoveryListener(holder[0]);
+            if (timeoutHolder[0] != null) main.removeCallbacks(timeoutHolder[0]);
+            com.example.radarhumanapplication.MqttService.DiscoveredDevice d =
+                    findDevice(mqtt, deviceName);
+            String fw  = d != null ? d.fw  : (expectedVersion == null ? "" : expectedVersion);
+            String ip  = d != null ? d.ip  : "";
+            String mac = d != null ? d.mac : "";
+            main.post(() -> cb.onInstalled(new MqttVerifyResult(
+                    deviceName, fw, ip, mac, true)));
+        };
+        mqtt.addDiscoveryListener(holder[0]);
+
+        timeoutHolder[0] = () -> {
+            synchronized (holder) {
+                if (settled[0]) return;
+                settled[0] = true;
+            }
+            mqtt.removeDiscoveryListener(holder[0]);
+            main.post(() -> cb.onError("Device did not announce on MQTT within "
+                    + (timeoutMs / 1000) + "s — check power / WiFi"));
+        };
+        main.postDelayed(timeoutHolder[0], timeoutMs);
+    }
+
+    private static com.example.radarhumanapplication.MqttService.DiscoveredDevice
+            findDevice(com.example.radarhumanapplication.MqttService mqtt, String name) {
+        for (com.example.radarhumanapplication.MqttService.DiscoveredDevice d
+                : mqtt.getDiscoveredDevices()) {
+            if (d != null && name.equals(d.deviceName)) return d;
+        }
+        return null;
     }
 
     // ------------------------------------------------------------------

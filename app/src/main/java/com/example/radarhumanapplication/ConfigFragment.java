@@ -784,27 +784,61 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         showFwProgress("Starting", 0);
         setFwStatus("Starting…", false);
 
-        firmwareUpdater.install(manifest, ip,
+        final com.example.radarhumanapplication.update.FirmwareUpdater updater = firmwareUpdater;
+        updater.install(manifest, ip,
                 new com.example.radarhumanapplication.update.FirmwareUpdater.InstallCallback() {
                     @Override public void onProgress(int percent, String phase) {
                         if (!isAdded()) return;
                         showFwProgress(phase + " (" + label + ")", percent);
                         setFwStatus(phase + "… " + percent + "%", false);
                     }
-                    @Override public void onInstalled() {
+                    @Override public void onUploaded() {
+                        if (!isAdded()) return;
+                        // Bytes are on the device; ESP32 is finishing the
+                        // 4× 250 ms blink and about to ESP.restart(). Switch
+                        // to MQTT-based verification — the new firmware
+                        // republishes /info with the new fw field on reconnect.
+                        showFwProgress("Verifying via MQTT", 100);
+                        setFwStatus("Uploaded — waiting for ESP32 to come back "
+                                + "online on MQTT…", false);
+                        // Active device name from MqttService is the most
+                        // reliable match for the just-flashed device.
+                        String expectedName = mqtt.getDeviceName();
+                        if (expectedName == null || expectedName.isEmpty()) {
+                            expectedName = label;
+                        }
+                        updater.verifyOnMqtt(
+                                expectedName,
+                                manifest.versionName,
+                                com.example.radarhumanapplication.update.FirmwareUpdater
+                                        .DEFAULT_MQTT_VERIFY_TIMEOUT_MS,
+                                this);
+                    }
+                    @Override public void onInstalled(
+                            com.example.radarhumanapplication.update.FirmwareUpdater
+                                    .MqttVerifyResult info) {
                         if (!isAdded()) return;
                         showFwProgress("Installed v" + manifest.versionName, 100);
                         btnFwCheck.setEnabled(true);
                         btnFwPick.setEnabled(true);
                         btnFwUpload.setEnabled(pickedFirmwareUri != null);
-                        setFwStatus("ESP32 (" + label + ") rebooting into v"
-                                + manifest.versionName, false);
+                        setFwStatus("ESP32 (" + label + ") now running v"
+                                + (info.fw.isEmpty()
+                                        ? manifest.versionName : info.fw),
+                                false);
+                        StringBuilder body = new StringBuilder();
+                        body.append("Device:   ").append(info.deviceName).append('\n');
+                        body.append("Firmware: v").append(info.fw.isEmpty()
+                                ? manifest.versionName : info.fw).append('\n');
+                        if (!info.ip.isEmpty())  body.append("IP:       ").append(info.ip).append('\n');
+                        if (!info.mac.isEmpty()) body.append("MAC:      ").append(info.mac).append('\n');
+                        body.append('\n').append(info.versionMatches
+                                ? "✅ Version match confirmed via MQTT."
+                                : "⚠ Device returned but the reported version "
+                                        + "differs from the manifest.");
                         new androidx.appcompat.app.AlertDialog.Builder(requireContext())
                                 .setTitle("Firmware installed")
-                                .setMessage("ESP32 (" + label + ") rebooted into v"
-                                        + manifest.versionName + ".\n\n"
-                                        + "MQTT will reconnect automatically once the device "
-                                        + "comes back online.")
+                                .setMessage(body.toString())
                                 .setPositiveButton("OK", null)
                                 .show();
                     }

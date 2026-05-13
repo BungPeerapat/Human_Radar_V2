@@ -35,6 +35,11 @@ public final class FirmwareUploader {
     private static final int BUFFER_SIZE        = 8 * 1024;
     /** Progress callbacks fire every N bytes to keep UI updates cheap. */
     private static final int PROGRESS_CHUNK     = 32 * 1024;
+    /** Hard deadline for the post-upload HTTP response. The ESP32 plays a 2 s
+     *  finish-blink before rebooting, and the response often gets cut mid-flush
+     *  — anything past ~6 s means the device is already in {@code ESP.restart()}
+     *  and we should hand off to the MQTT-based verifier instead of waiting. */
+    private static final int POST_UPLOAD_RESPONSE_TIMEOUT_MS = 6_000;
 
     public interface Callback {
         /** Called on main thread when the upload succeeds and ESP32 acknowledged restart. */
@@ -149,25 +154,56 @@ public final class FirmwareUploader {
 
             main.post(() -> cb.onProgress(100));
 
-            int code;
-            try {
-                code = conn.getResponseCode();
-            } catch (Exception readErr) {
-                // ESP32 may reboot before fully sending the response. If we got that far the
-                // upload almost certainly succeeded — treat as completion.
-                Log.w(TAG, "Response read failed (device may already be rebooting): "
-                        + readErr.getMessage());
+            // After the .bin is fully on the wire, the ESP32 verifies the image,
+            // sends "200 OK", plays the GPIO26 finish blink (~2 s), and reboots.
+            // Reading the response in the same thread can stall up to READ_TIMEOUT
+            // if the device cuts the socket before all response bytes flush —
+            // hence the bounded read on a daemon thread.
+            final HttpURLConnection finalConn = conn;
+            final java.util.concurrent.atomic.AtomicInteger codeRef =
+                    new java.util.concurrent.atomic.AtomicInteger(-1);
+            final java.util.concurrent.atomic.AtomicReference<String> bodyRef =
+                    new java.util.concurrent.atomic.AtomicReference<>("");
+            final java.util.concurrent.atomic.AtomicReference<String> errRef =
+                    new java.util.concurrent.atomic.AtomicReference<>(null);
+            final java.util.concurrent.CountDownLatch latch =
+                    new java.util.concurrent.CountDownLatch(1);
+            Thread reader = new Thread(() -> {
+                try {
+                    int c = finalConn.getResponseCode();
+                    codeRef.set(c);
+                    bodyRef.set(readBody(finalConn, c));
+                } catch (Exception e) {
+                    errRef.set(e.getMessage());
+                } finally {
+                    latch.countDown();
+                }
+            }, "OTA-resp-reader");
+            reader.setDaemon(true);
+            reader.start();
+            boolean gotResponse = latch.await(
+                    POST_UPLOAD_RESPONSE_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+            if (!gotResponse) {
+                Log.w(TAG, "No response within "
+                        + (POST_UPLOAD_RESPONSE_TIMEOUT_MS / 1000)
+                        + "s — assuming ESP32 already rebooted with new firmware");
                 main.post(cb::onCompleted);
                 return;
             }
-            String body = readBody(conn, code);
+            int code = codeRef.get();
+            String body = bodyRef.get();
+            String readErr = errRef.get();
+            if (readErr != null) {
+                Log.w(TAG, "Response read failed (device may already be rebooting): " + readErr);
+                main.post(cb::onCompleted);
+                return;
+            }
             Log.i(TAG, "OTA upload response: HTTP " + code + " body=" + body);
-
             if (code >= 200 && code < 300) {
                 main.post(cb::onCompleted);
             } else {
                 postError(cb, "ESP32 returned HTTP " + code
-                        + (body.isEmpty() ? "" : (": " + body)));
+                        + (body == null || body.isEmpty() ? "" : (": " + body)));
             }
         } catch (Exception e) {
             Log.e(TAG, "OTA upload failed", e);

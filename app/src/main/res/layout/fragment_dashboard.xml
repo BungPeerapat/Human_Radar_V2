@@ -223,14 +223,19 @@
                     android:layout_height="wrap_content"
                     android:layout_weight="2"
                     android:hint="Device Name"
-                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-                    <com.google.android.material.textfield.TextInputEditText
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
+                    <!-- MaterialAutoCompleteTextView powers an exposed-dropdown
+                         showing every device currently publishing on
+                         humanradar/+/status — by construction those are our
+                         project's devices. Users can also free-type a name. -->
+                    <com.google.android.material.textfield.MaterialAutoCompleteTextView
                         android:id="@+id/et_device_name"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:textColor="@color/white"
                         android:text="HumanRadar"
-                        android:inputType="text" />
+                        android:inputType="text"
+                        android:completionThreshold="0" />
                 </com.google.android.material.textfield.TextInputLayout>
             </LinearLayout>
 
