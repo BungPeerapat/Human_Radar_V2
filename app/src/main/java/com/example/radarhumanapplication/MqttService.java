@@ -297,6 +297,39 @@ public class MqttService {
     public void setLiveTargetMute(boolean muted) { this.liveTargetMuted = muted; }
     public boolean isLiveTargetMuted() { return liveTargetMuted; }
 
+    /** Extra "humanradar/&lt;name&gt;/targets" subscriptions added on top of the active
+     *  device's primary subscription. Used by the Radar tab's multi-device
+     *  overlay so frames from secondary devices reach the same TargetListener
+     *  fan-out, tagged with their _dev so the consumer can route correctly. */
+    private final java.util.Set<String> extraTargetSubs =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
+
+    public void subscribeDeviceTargets(String deviceName) {
+        if (deviceName == null || deviceName.isEmpty()) return;
+        if (deviceName.equals(this.deviceName)) return;     // already covered
+        if (extraTargetSubs.contains(deviceName)) return;
+        extraTargetSubs.add(deviceName);
+        if (client == null || !connected) return;
+        subscribe("humanradar/" + deviceName + "/targets", this::handleTargets);
+    }
+
+    public void unsubscribeDeviceTargets(String deviceName) {
+        if (deviceName == null || deviceName.isEmpty()) return;
+        if (!extraTargetSubs.remove(deviceName)) return;
+        if (client == null) return;
+        try {
+            client.unsubscribeWith()
+                    .topicFilter("humanradar/" + deviceName + "/targets")
+                    .send();
+        } catch (Exception e) {
+            Log.w(TAG, "unsubscribeDeviceTargets failed for " + deviceName, e);
+        }
+    }
+
+    public java.util.Set<String> getExtraTargetSubscriptions() {
+        return new java.util.HashSet<>(extraTargetSubs);
+    }
+
     /**
      * Public dispatch hook used by {@link com.example.radarhumanapplication.recording.SessionReplayer}
      * to feed replayed frames into the same fan-out as live MQTT. Always runs on the main
@@ -433,6 +466,14 @@ public class MqttService {
         // handleLog extracts the device name from the topic and tags the
         // resulting LogEntry so listeners can route correctly.
         subscribe("humanradar/+/log", this::handleLog);
+
+        // Re-attach any extra-device target subscriptions the Radar tab added
+        // before this connection finished (or that survived a reconnect).
+        for (String dn : extraTargetSubs) {
+            if (dn != null && !dn.isEmpty() && !dn.equals(deviceName)) {
+                subscribe("humanradar/" + dn + "/targets", this::handleTargets);
+            }
+        }
 
         // Wildcard discovery — picks up every ESP32 that publishes humanradar/<name>/status
         // on the same broker. Used by the device picker to show what's actually online.

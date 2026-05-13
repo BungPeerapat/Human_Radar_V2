@@ -73,6 +73,9 @@ public class RadarFragment extends Fragment
     private View activeDeviceChip;
     private TextView activeDeviceName, activeDeviceDot;
     private ImageButton btnKeepScreenOn, btnManualRotate, btnLockOrientation, btnNightMode, btnSnapshot;
+    private ImageButton btnMultiDevice;
+    private static final String PREFS_RADAR = "radar_multi_device";
+    private static final String PREFS_KEY_SECONDARY = "secondary_devices";
     private boolean isFullscreen = false;
     private MqttService mqtt;
     private RadarUiPrefs uiPrefs;
@@ -112,6 +115,8 @@ public class RadarFragment extends Fragment
         btnLockOrientation = v.findViewById(R.id.btn_lock_orientation);
         btnNightMode = v.findViewById(R.id.btn_night_mode);
         btnSnapshot = v.findViewById(R.id.btn_snapshot);
+        btnMultiDevice = v.findViewById(R.id.btn_multi_device);
+        btnMultiDevice.setOnClickListener(view -> openMultiDevicePicker());
         replayBadge = v.findViewById(R.id.replay_badge);
         replayBadgeDetail = v.findViewById(R.id.replay_badge_detail);
         activeDeviceChip = v.findViewById(R.id.active_device_chip);
@@ -142,6 +147,8 @@ public class RadarFragment extends Fragment
         applyNightMode(uiPrefs.isNightMode());
 
         deviceStatus = mqtt.getDeviceStatus();
+        radarView.setPrimaryDevice(mqtt.getDeviceName() == null ? "" : mqtt.getDeviceName());
+        restoreSecondaryDevicesFromPrefs();
         updateConnectionStatus();
         applyAlertDistances();
         mqtt.addTargetListener(this);
@@ -186,6 +193,87 @@ public class RadarFragment extends Fragment
         activeDeviceDot.setText(online ? "●" : "○");
         activeDeviceDot.setTextColor(getColor(
                 online ? R.color.radar_green : R.color.radar_red));
+    }
+
+    // ───────────────────────── Multi-device overlay ─────────────────────────
+
+    /** Multi-select dialog of every discovered device. The currently active
+     *  device is shown checked + disabled (always rendered as primary).
+     *  Other selected devices subscribe to extra targets topics so their
+     *  frames flow into RadarView as secondary dots. */
+    private void openMultiDevicePicker() {
+        java.util.List<MqttService.DiscoveredDevice> all = mqtt.getDiscoveredDevices();
+        String active = mqtt.getDeviceName();
+        java.util.List<String> selectable = new java.util.ArrayList<>();
+        for (MqttService.DiscoveredDevice d : all) {
+            if (d == null || d.deviceName == null || d.deviceName.isEmpty()) continue;
+            if (d.deviceName.equals(active)) continue;       // primary handled separately
+            selectable.add(d.deviceName);
+        }
+        if (selectable.isEmpty()) {
+            new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setTitle("No other devices")
+                    .setMessage("Only one device is on the broker. Connect a second ESP32 "
+                            + "and it will show up here automatically.")
+                    .setPositiveButton("OK", null)
+                    .show();
+            return;
+        }
+        java.util.Set<String> alreadyShown = radarView.getShownSecondaryDevices();
+        String[] items = selectable.toArray(new String[0]);
+        boolean[] checked = new boolean[items.length];
+        for (int i = 0; i < items.length; i++) checked[i] = alreadyShown.contains(items[i]);
+
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle("Show on radar (active = " + (active == null ? "?" : active) + ")")
+                .setMultiChoiceItems(items, checked, (d, which, isChecked) ->
+                        checked[which] = isChecked)
+                .setPositiveButton("Apply", (d, w) -> {
+                    java.util.Set<String> picked = new java.util.LinkedHashSet<>();
+                    for (int i = 0; i < items.length; i++) {
+                        if (checked[i]) picked.add(items[i]);
+                    }
+                    applySecondaryDevices(picked);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    /** Diff the current secondary set with the picked one, subscribe to new
+     *  devices, unsubscribe from removed devices, persist + repaint. */
+    private void applySecondaryDevices(java.util.Set<String> picked) {
+        java.util.Set<String> previous = radarView.getShownSecondaryDevices();
+        for (String name : previous) {
+            if (!picked.contains(name)) mqtt.unsubscribeDeviceTargets(name);
+        }
+        for (String name : picked) {
+            if (!previous.contains(name)) mqtt.subscribeDeviceTargets(name);
+        }
+        radarView.setShownSecondaryDevices(picked);
+        requireContext().getSharedPreferences(PREFS_RADAR, 0)
+                .edit()
+                .putStringSet(PREFS_KEY_SECONDARY, new java.util.HashSet<>(picked))
+                .apply();
+        android.widget.Toast.makeText(requireContext(),
+                "Showing " + picked.size() + " extra device"
+                        + (picked.size() == 1 ? "" : "s"),
+                android.widget.Toast.LENGTH_SHORT).show();
+    }
+
+    private void restoreSecondaryDevicesFromPrefs() {
+        java.util.Set<String> set = requireContext()
+                .getSharedPreferences(PREFS_RADAR, 0)
+                .getStringSet(PREFS_KEY_SECONDARY, java.util.Collections.emptySet());
+        if (set == null || set.isEmpty()) return;
+        String active = mqtt.getDeviceName();
+        java.util.Set<String> keep = new java.util.LinkedHashSet<>();
+        for (String name : set) {
+            if (name == null || name.isEmpty()) continue;
+            if (name.equals(active)) continue;
+            keep.add(name);
+            mqtt.subscribeDeviceTargets(name);
+        }
+        radarView.setShownSecondaryDevices(keep);
     }
 
     /** Tap on the chip — open the device picker and route the choice through
@@ -311,6 +399,12 @@ public class RadarFragment extends Fragment
             // ESP32 published its LWT — drop any frozen targets from the canvas.
             radarView.clearTargets();
             lastFrameMs = 0;
+        }
+        // Active device may have changed under us (Device Hub / chip switch);
+        // keep the canvas's "primary" stream in sync.
+        if (radarView != null) {
+            radarView.setPrimaryDevice(mqtt.getDeviceName() == null
+                    ? "" : mqtt.getDeviceName());
         }
         updateConnectionStatus();
     }

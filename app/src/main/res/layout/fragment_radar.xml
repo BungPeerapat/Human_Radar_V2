@@ -180,6 +180,14 @@
                 android:src="@android:drawable/ic_menu_camera"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Snapshot" />
+
+            <ImageButton
+                android:id="@+id/btn_multi_device"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:src="@android:drawable/ic_menu_share"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Show multiple devices" />
         </LinearLayout>
     </FrameLayout>
 

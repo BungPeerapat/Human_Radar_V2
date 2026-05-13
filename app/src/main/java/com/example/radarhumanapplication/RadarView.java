@@ -63,6 +63,28 @@ public class RadarView extends View {
     private final List<Long> frameTimes = new ArrayList<>();
     private int currentFps = 0;
 
+    // ── Multi-device overlay (v1.0.35) ───────────────────────────────────
+    // primaryDevice = the device whose frames drive the main targets[] array
+    // (with trails, labels, full styling). Secondary devices are rendered as
+    // simpler dots with a colour per device, behind the primary layer.
+    private String primaryDevice = "";
+    private final java.util.LinkedHashMap<String, TargetData[]> secondaryTargets =
+            new java.util.LinkedHashMap<>();
+    private final java.util.LinkedHashSet<String> shownSecondary =
+            new java.util.LinkedHashSet<>();
+    /** Colour palette for secondary devices. Picked per device by hashing the
+     *  name, so a given device gets the same colour across sessions. */
+    private static final int[] DEVICE_PALETTE = {
+            0xFFFFAA00, // orange
+            0xFF00FFFF, // cyan
+            0xFFFF44FF, // magenta
+            0xFFFFEE00, // yellow
+            0xFF88FFAA, // light green
+            0xFFFFAAAA, // light red
+            0xFFAACCFF, // light blue
+            0xFFFFCC88, // peach
+    };
+
     // Listener for info updates
     public interface InfoListener {
         void onInfoUpdated(TargetData[] targets, long frameCount, long errorCount, int fps);
@@ -182,6 +204,34 @@ public class RadarView extends View {
         return bmp;
     }
 
+    /** Set the device whose frames drive the primary targets[] (with trails,
+     *  labels and full styling). Empty = first frame's _dev wins. */
+    public void setPrimaryDevice(String name) {
+        this.primaryDevice = name == null ? "" : name;
+        invalidate();
+    }
+
+    /** Replace the set of secondary devices rendered as colored dots over the
+     *  primary layer. Pass an empty / null collection to remove every overlay. */
+    public void setShownSecondaryDevices(java.util.Collection<String> names) {
+        shownSecondary.clear();
+        if (names != null) for (String n : names) {
+            if (n != null && !n.isEmpty()) shownSecondary.add(n);
+        }
+        secondaryTargets.keySet().retainAll(shownSecondary);
+        invalidate();
+    }
+
+    public java.util.Set<String> getShownSecondaryDevices() {
+        return new java.util.LinkedHashSet<>(shownSecondary);
+    }
+
+    /** Stable colour for a secondary device name. */
+    public static int colorForDevice(String name) {
+        if (name == null || name.isEmpty()) return DEVICE_PALETTE[0];
+        return DEVICE_PALETTE[Math.floorMod(name.hashCode(), DEVICE_PALETTE.length)];
+    }
+
     /** Drop every target and clear all trails. Used when the device goes offline or
      *  no frame has arrived for a while — prevents the radar from showing stale
      *  positions that no longer correspond to anything in the real world. */
@@ -195,6 +245,10 @@ public class RadarView extends View {
             targets[i].angle = 0;
             if (trails[i] != null) trails[i].clear();
         }
+        for (TargetData[] arr : secondaryTargets.values()) {
+            if (arr == null) continue;
+            for (TargetData td : arr) if (td != null) td.present = false;
+        }
         if (infoListener != null) {
             infoListener.onInfoUpdated(targets, frameCount, errorCount, 0);
         }
@@ -202,36 +256,69 @@ public class RadarView extends View {
     }
 
     public void updateTargets(JsonObject data) {
-        // FPS tracking
-        long now = System.currentTimeMillis();
-        frameTimes.add(now);
-        while (!frameTimes.isEmpty() && frameTimes.get(0) < now - 1000) {
-            frameTimes.remove(0);
+        // Route per source device: primary = main layer with trails + InfoListener,
+        // secondary = overlay dot only. Frames without _dev (legacy replay paths)
+        // fall through to the primary layer for backward compatibility.
+        String src = "";
+        if (data.has("_dev") && !data.get("_dev").isJsonNull()) {
+            try { src = data.get("_dev").getAsString(); } catch (Exception ignored) {}
         }
-        currentFps = frameTimes.size();
+        boolean isPrimary = primaryDevice.isEmpty() || src.isEmpty()
+                || src.equals(primaryDevice);
 
         JsonArray t = data.getAsJsonArray("t");
         if (t == null) return;
 
-        frameCount = data.has("fc") ? data.get("fc").getAsLong() : 0;
-        errorCount = data.has("ec") ? data.get("ec").getAsLong() : 0;
+        if (isPrimary) {
+            // FPS tracking only for the primary stream.
+            long now = System.currentTimeMillis();
+            frameTimes.add(now);
+            while (!frameTimes.isEmpty() && frameTimes.get(0) < now - 1000) {
+                frameTimes.remove(0);
+            }
+            currentFps = frameTimes.size();
 
+            frameCount = data.has("fc") ? data.get("fc").getAsLong() : 0;
+            errorCount = data.has("ec") ? data.get("ec").getAsLong() : 0;
+
+            for (int i = 0; i < Math.min(3, t.size()); i++) {
+                JsonObject obj = t.get(i).getAsJsonObject();
+                targets[i].present = obj.has("p") && obj.get("p").getAsBoolean();
+                if (targets[i].present) {
+                    targets[i].x = obj.get("x").getAsInt();
+                    targets[i].y = obj.get("y").getAsInt();
+                    targets[i].speed = obj.get("s").getAsInt();
+                    targets[i].distance = obj.get("d").getAsInt();
+                    targets[i].angle = obj.has("a") ? obj.get("a").getAsFloat() : 0f;
+                }
+            }
+
+            if (infoListener != null) {
+                infoListener.onInfoUpdated(targets, frameCount, errorCount, currentFps);
+            }
+            invalidate();
+            return;
+        }
+
+        // Secondary device — render only if user opted in via setShownSecondaryDevices.
+        if (!shownSecondary.contains(src)) return;
+        TargetData[] arr = secondaryTargets.get(src);
+        if (arr == null) {
+            arr = new TargetData[3];
+            for (int i = 0; i < 3; i++) arr[i] = new TargetData();
+            secondaryTargets.put(src, arr);
+        }
         for (int i = 0; i < Math.min(3, t.size()); i++) {
             JsonObject obj = t.get(i).getAsJsonObject();
-            targets[i].present = obj.has("p") && obj.get("p").getAsBoolean();
-            if (targets[i].present) {
-                targets[i].x = obj.get("x").getAsInt();
-                targets[i].y = obj.get("y").getAsInt();
-                targets[i].speed = obj.get("s").getAsInt();
-                targets[i].distance = obj.get("d").getAsInt();
-                targets[i].angle = obj.has("a") ? obj.get("a").getAsFloat() : 0f;
+            arr[i].present = obj.has("p") && obj.get("p").getAsBoolean();
+            if (arr[i].present) {
+                arr[i].x = obj.get("x").getAsInt();
+                arr[i].y = obj.get("y").getAsInt();
+                arr[i].speed = obj.get("s").getAsInt();
+                arr[i].distance = obj.get("d").getAsInt();
+                arr[i].angle = obj.has("a") ? obj.get("a").getAsFloat() : 0f;
             }
         }
-
-        if (infoListener != null) {
-            infoListener.onInfoUpdated(targets, frameCount, errorCount, currentFps);
-        }
-
         invalidate();
     }
 
@@ -269,7 +356,92 @@ public class RadarView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         drawBackground(canvas);
+        drawSecondaryTargets(canvas); // behind the primary layer
         drawTargets(canvas);
+        drawMultiDeviceLegend(canvas);
+    }
+
+    /** Secondary devices: smaller dot + glow + short "DevN" label, single
+     *  colour per device. No trails (keeps the canvas readable with N devices). */
+    private void drawSecondaryTargets(Canvas canvas) {
+        if (secondaryTargets.isEmpty()) return;
+        for (java.util.Map.Entry<String, TargetData[]> e : secondaryTargets.entrySet()) {
+            int color = colorForDevice(e.getKey());
+            String shortName = shortLabelForDevice(e.getKey());
+            TargetData[] arr = e.getValue();
+            for (int i = 0; i < 3; i++) {
+                TargetData t = arr[i];
+                if (!t.present) continue;
+                float px = cx + t.x * scale;
+                float py = cy - t.y * scale;
+                px = Math.max(20, Math.min(getWidth() - 20, px));
+                py = Math.max(20, Math.min(getHeight() - 20, py));
+
+                glowPaint.setColor(color);
+                glowPaint.setAlpha(45);
+                canvas.drawCircle(px, py, 22, glowPaint);
+
+                targetPaint.setColor(color);
+                targetPaint.setAlpha(220);
+                canvas.drawCircle(px, py, 10, targetPaint);
+
+                // Outline so the dot stays visible against a dark canvas.
+                targetPaint.setStyle(Paint.Style.STROKE);
+                targetPaint.setStrokeWidth(1.5f);
+                targetPaint.setColor(0xFF000000);
+                canvas.drawCircle(px, py, 10, targetPaint);
+                targetPaint.setStyle(Paint.Style.FILL);
+
+                float prev = textPaint.getTextSize();
+                textPaint.setTextSize(18f);
+                canvas.drawText(shortName + (i + 1), px, py - 18, textPaint);
+                textPaint.setTextSize(prev);
+            }
+        }
+    }
+
+    /** Tiny legend so users can match colours to device names when 2+ secondary
+     *  devices are showing. Drawn top-left so it doesn't collide with the
+     *  active-device chip the RadarFragment places top-center. */
+    private void drawMultiDeviceLegend(Canvas canvas) {
+        if (secondaryTargets.isEmpty()) return;
+        float x = 16f;
+        float y = 28f;
+        float prev = labelPaint.getTextSize();
+        labelPaint.setTextSize(20f);
+        labelPaint.setTextAlign(Paint.Align.LEFT);
+        for (String dn : secondaryTargets.keySet()) {
+            int color = colorForDevice(dn);
+            targetPaint.setColor(color);
+            canvas.drawCircle(x + 6, y - 6, 8, targetPaint);
+            int prevColor = labelPaint.getColor();
+            labelPaint.setColor(0xFFCCCCCC);
+            canvas.drawText(dn, x + 22, y, labelPaint);
+            labelPaint.setColor(prevColor);
+            y += 22;
+        }
+        labelPaint.setTextSize(prev);
+        labelPaint.setTextAlign(Paint.Align.CENTER);
+    }
+
+    private static String shortLabelForDevice(String name) {
+        if (name == null || name.isEmpty()) return "D";
+        // Take alphanumeric chars only and clip — "HumanRadarBung" → "HRB"
+        StringBuilder out = new StringBuilder();
+        boolean lastWasSep = true;
+        for (int i = 0; i < name.length() && out.length() < 3; i++) {
+            char c = name.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                if (lastWasSep || Character.isUpperCase(c) || Character.isDigit(c)) {
+                    out.append(c);
+                }
+                lastWasSep = false;
+            } else {
+                lastWasSep = true;
+            }
+        }
+        if (out.length() == 0) out.append(name.charAt(0));
+        return out.toString();
     }
 
     public void setAlertDistancesMm(List<Integer> distances) {
