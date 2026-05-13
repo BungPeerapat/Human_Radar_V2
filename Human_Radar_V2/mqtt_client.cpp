@@ -431,6 +431,8 @@ void MqttRadarClient::handleCommand(const uint8_t* payload, unsigned int length)
     } else if (strcmp(cmd, "set_log_level") == 0) {
         const char* level = doc["level"] | "INFO";
         cmdSetLogLevel(requestId, level);
+    } else if (strcmp(cmd, "health") == 0) {
+        cmdHealth(requestId);
     } else {
         Log::warn(TAG_MQTT, "Unknown command: %s", cmd);
         // Publish error ACK
@@ -479,6 +481,39 @@ void MqttRadarClient::cmdGetLogBuffer(const char* requestId, int limit) {
     char ack[192];
     snprintf(ack, sizeof(ack),
         "{\"request_id\":\"%s\",\"status\":\"ok\",\"sent\":%d}", requestId, count - start);
+    _mqtt.publish(_topicCmdAck, ack);
+}
+
+// Lightweight "is this device alive?" probe. The app's HealthCheckManager
+// sends this to a known device and watches `humanradar/+/status`,
+// `humanradar/+/info` and `cmd/ack` for any of those three to arrive before
+// the deadline. Devices that don't respond are considered offline and the
+// app sweeps their stale targets off the radar canvas.
+void MqttRadarClient::cmdHealth(const char* requestId) {
+    Log::info(TAG_MQTT, "CMD: health");
+    // Re-assert liveness on the wildcard-watched topics first — that's what
+    // the app actually keys off for the "did this device respond" check.
+    _mqtt.publish(_topicStatus, "online", true);
+    publishInfo();
+
+    const DeviceConfig& cfg = configManager.get();
+    String ip = WiFi.getMode() == WIFI_AP
+            ? WiFi.softAPIP().toString()
+            : WiFi.localIP().toString();
+    long rssi = (WiFi.getMode() == WIFI_AP) ? 0 : WiFi.RSSI();
+
+    char ack[384];
+    snprintf(ack, sizeof(ack),
+        "{\"request_id\":\"%s\",\"status\":\"ok\",\"cmd\":\"health\","
+        "\"device\":\"%s\",\"fw\":\"%s\",\"ip\":\"%s\","
+        "\"uptime\":%lu,\"heap\":%lu,\"rssi\":%ld}",
+        requestId,
+        strlen(cfg.deviceName) > 0 ? cfg.deviceName : "HumanRadar",
+        FW_VERSION,
+        ip.c_str(),
+        (unsigned long)(millis() / 1000UL),
+        (unsigned long)ESP.getFreeHeap(),
+        rssi);
     _mqtt.publish(_topicCmdAck, ack);
 }
 

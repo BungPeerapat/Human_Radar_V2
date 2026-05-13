@@ -61,9 +61,15 @@ public class DashboardFragment extends Fragment
     // Device Hub UI
     private RecyclerView rvDeviceHub;
     private TextView tvDeviceHubCount, tvDeviceHubEmpty;
+    private MaterialButton btnHealthCheckAll;
     private DeviceHubAdapter deviceHubAdapter;
     private static final String DEVICE_HUB_PREFS = "device_hub_prefs";
     private static final String DEVICE_HUB_PINNED_KEY = "pinned_devices";
+    /** Total wait (ms) for an ESP32 to respond to a `health` MQTT probe. The
+     *  ESP republishes status+info synchronously on receipt, so a healthy
+     *  device round-trips within ~150 ms; the budget here is forgiving for
+     *  slow Wi-Fi / hosted broker hops. */
+    private static final long HEALTH_TIMEOUT_MS = 3000;
 
     // Recording UI
     private TextView tvRecStatus;
@@ -120,14 +126,16 @@ public class DashboardFragment extends Fragment
         btnReplayOpen = v.findViewById(R.id.btn_replay_open);
 
         // Device Hub — Multi-device "no thinking" surface.
-        rvDeviceHub      = v.findViewById(R.id.rv_device_hub);
-        tvDeviceHubCount = v.findViewById(R.id.tv_device_hub_count);
-        tvDeviceHubEmpty = v.findViewById(R.id.tv_device_hub_empty);
+        rvDeviceHub        = v.findViewById(R.id.rv_device_hub);
+        tvDeviceHubCount   = v.findViewById(R.id.tv_device_hub_count);
+        tvDeviceHubEmpty   = v.findViewById(R.id.tv_device_hub_empty);
+        btnHealthCheckAll  = v.findViewById(R.id.btn_health_check_all);
         rvDeviceHub.setLayoutManager(new LinearLayoutManager(requireContext()));
         deviceHubAdapter = new DeviceHubAdapter(requireContext(),
                 this::onDeviceHubTap,
                 this::onDeviceHubLongPress);
         rvDeviceHub.setAdapter(deviceHubAdapter);
+        btnHealthCheckAll.setOnClickListener(x -> onHealthCheckAllClick());
         refreshDeviceHub();
 
         loadPrefs();
@@ -263,14 +271,16 @@ public class DashboardFragment extends Fragment
         android.view.Menu menu = pm.getMenu();
         menu.add(0, 1, 0, isPinned ? "Unpin" : "📌 Pin to top");
         menu.add(0, 2, 1, "View details");
-        menu.add(0, 3, 2, "🔌 Restart device");
-        menu.add(0, 4, 3, "🗑️ Remove from hub");
+        menu.add(0, 3, 2, "🩺 Check health");
+        menu.add(0, 4, 3, "🔌 Restart device");
+        menu.add(0, 5, 4, "🗑️ Remove from hub");
         pm.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 1: togglePinned(d.deviceName); return true;
                 case 2: showDeviceDetailsDialog(d);  return true;
-                case 3: confirmRestartDevice(d);     return true;
-                case 4: confirmRemoveDevice(d);      return true;
+                case 3: checkHealthForOne(d);        return true;
+                case 4: confirmRestartDevice(d);     return true;
+                case 5: confirmRemoveDevice(d);      return true;
                 default: return false;
             }
         });
@@ -340,6 +350,132 @@ public class DashboardFragment extends Fragment
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
+    }
+
+    /** Header-card "Check All" button — probe every discovered device and
+     *  sweep stale targets for any device that doesn't respond. */
+    private void onHealthCheckAllClick() {
+        if (!isAdded()) return;
+        if (!mqtt.isConnected()) {
+            Toast.makeText(requireContext(),
+                    "Connect to MQTT first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (com.example.radarhumanapplication.health.HealthCheckManager
+                .getInstance().isRunning()) {
+            Toast.makeText(requireContext(),
+                    "Health check already running", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (mqtt.getDiscoveredDevices().isEmpty()) {
+            Toast.makeText(requireContext(),
+                    "No devices discovered yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        btnHealthCheckAll.setEnabled(false);
+        btnHealthCheckAll.setText("Checking…");
+        boolean started = com.example.radarhumanapplication.health.HealthCheckManager
+                .getInstance()
+                .checkAll(HEALTH_TIMEOUT_MS, (results, offline) -> {
+                    if (!isAdded()) return;
+                    btnHealthCheckAll.setEnabled(true);
+                    btnHealthCheckAll.setText("Check All");
+                    refreshDeviceHub();
+                    showHealthAllReport(results, offline);
+                });
+        if (!started) {
+            btnHealthCheckAll.setEnabled(true);
+            btnHealthCheckAll.setText("Check All");
+            Toast.makeText(requireContext(),
+                    "Could not start health check", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /** Per-row health check from the long-press menu. Does NOT sweep on miss
+     *  (single-device probes are too noisy to auto-flag offline). */
+    private void checkHealthForOne(MqttService.DiscoveredDevice d) {
+        if (d == null || d.deviceName == null) return;
+        if (!mqtt.isConnected()) {
+            Toast.makeText(requireContext(),
+                    "Connect to MQTT first", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(requireContext(),
+                "Probing " + d.deviceName + "…", Toast.LENGTH_SHORT).show();
+        boolean started = com.example.radarhumanapplication.health.HealthCheckManager
+                .getInstance()
+                .checkOne(d.deviceName, HEALTH_TIMEOUT_MS, (results, offline) -> {
+                    if (!isAdded() || results.isEmpty()) return;
+                    refreshDeviceHub();
+                    showHealthOneDialog(results.get(0));
+                });
+        if (!started) {
+            Toast.makeText(requireContext(),
+                    "Health check busy — try again", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showHealthOneDialog(
+            com.example.radarhumanapplication.health.HealthCheckManager.HealthResult r) {
+        if (!isAdded() || r == null) return;
+        StringBuilder body = new StringBuilder();
+        body.append("Device: ").append(r.deviceName).append('\n');
+        body.append(r.responded ? "Status: ✅ ONLINE\n" : "Status: ❌ OFFLINE (no reply in "
+                + (HEALTH_TIMEOUT_MS / 1000) + "s)\n");
+        if (r.responded) {
+            if (!r.fw.isEmpty()) body.append("FW:     v").append(r.fw).append('\n');
+            if (!r.ip.isEmpty()) body.append("IP:     ").append(r.ip).append('\n');
+            if (r.uptimeSec > 0)  body.append("Uptime: ").append(formatUptime(r.uptimeSec)).append('\n');
+            if (r.heapBytes > 0)  body.append("Heap:   ").append(r.heapBytes / 1024).append(" kB\n");
+            if (r.rssiDb != 0)    body.append("RSSI:   ").append(r.rssiDb).append(" dBm");
+        }
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Health check")
+                .setMessage(body.toString())
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private void showHealthAllReport(
+            java.util.List<com.example.radarhumanapplication.health.HealthCheckManager.HealthResult> results,
+            java.util.Set<String> offline) {
+        if (!isAdded()) return;
+        StringBuilder body = new StringBuilder();
+        int online = results.size() - offline.size();
+        body.append("Probed ").append(results.size()).append(" device")
+                .append(results.size() == 1 ? "" : "s")
+                .append(":  ✅ ").append(online).append(" online, ❌ ")
+                .append(offline.size()).append(" offline\n\n");
+        for (com.example.radarhumanapplication.health.HealthCheckManager.HealthResult r : results) {
+            body.append(r.responded ? "✅ " : "❌ ");
+            body.append(r.deviceName);
+            if (r.responded) {
+                body.append("  •  v").append(r.fw.isEmpty() ? "?" : r.fw);
+                if (r.uptimeSec > 0) body.append("  up ").append(formatUptime(r.uptimeSec));
+                if (r.rssiDb != 0)   body.append("  ").append(r.rssiDb).append(" dBm");
+            }
+            body.append('\n');
+        }
+        if (!offline.isEmpty()) {
+            body.append("\nStale targets cleared from radar.");
+        }
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Health check — all devices")
+                .setMessage(body.toString())
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private static String formatUptime(long secs) {
+        if (secs <= 0) return "?";
+        long d = secs / 86400;
+        long h = (secs % 86400) / 3600;
+        long m = (secs % 3600) / 60;
+        long s = secs % 60;
+        if (d > 0) return String.format(Locale.US, "%dd %dh", d, h);
+        if (h > 0) return String.format(Locale.US, "%dh %dm", h, m);
+        if (m > 0) return String.format(Locale.US, "%dm %ds", m, s);
+        return s + "s";
     }
 
     /** Single-tap: make this row the active MQTT subscription target. */
@@ -745,10 +881,15 @@ public class DashboardFragment extends Fragment
 
     private void loadPrefs() {
         SharedPreferences prefs = requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-        etHost.setText(prefs.getString("host", ""));
-        etPort.setText(String.valueOf(prefs.getInt("port", 1883)));
+        // First-run defaults point at the hosted broker so a fresh install
+        // can connect without the user typing an IP. Saved prefs always win.
+        etHost.setText(prefs.getString("host", DEFAULT_BROKER_HOST));
+        etPort.setText(String.valueOf(prefs.getInt("port", DEFAULT_BROKER_PORT)));
         etDeviceName.setText(prefs.getString("device", "HumanRadar"));
         etUsername.setText(prefs.getString("user", ""));
         etPassword.setText(prefs.getString("pass", ""));
     }
+
+    private static final String DEFAULT_BROKER_HOST = "119.59.99.155";
+    private static final int    DEFAULT_BROKER_PORT = 8883;
 }

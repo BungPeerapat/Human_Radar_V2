@@ -94,6 +94,12 @@ public class MqttService {
         void onDeviceDiscovered(String deviceName, String status, long lastSeenMs);
     }
 
+    /** Fired for every cmd/ack arriving on humanradar/+/cmd/ack — used by the
+     *  HealthCheckManager to know which device responded to a health probe. */
+    public interface AnyCmdAckListener {
+        void onAnyCmdAck(String deviceName, JsonObject ack);
+    }
+
     /** A device seen on the wildcard discovery feed. */
     public static class DiscoveredDevice {
         public final String deviceName;
@@ -120,6 +126,7 @@ public class MqttService {
     private final List<ConfigAckListener> configAckListeners = new CopyOnWriteArrayList<>();
     private final List<CmdAckListener> cmdAckListeners = new CopyOnWriteArrayList<>();
     private final List<DiscoveryListener> discoveryListeners = new CopyOnWriteArrayList<>();
+    private final List<AnyCmdAckListener> anyCmdAckListeners = new CopyOnWriteArrayList<>();
     /** Devices observed via wildcard {@code humanradar/+/status} since connect. */
     private final Map<String, DiscoveredDevice> discoveredDevices = new ConcurrentHashMap<>();
 
@@ -147,6 +154,8 @@ public class MqttService {
     public void removeCmdAckListener(CmdAckListener l) { cmdAckListeners.remove(l); }
     public void addDiscoveryListener(DiscoveryListener l) { discoveryListeners.add(l); }
     public void removeDiscoveryListener(DiscoveryListener l) { discoveryListeners.remove(l); }
+    public void addAnyCmdAckListener(AnyCmdAckListener l) { anyCmdAckListeners.add(l); }
+    public void removeAnyCmdAckListener(AnyCmdAckListener l) { anyCmdAckListeners.remove(l); }
 
     /** Snapshot of every device seen via humanradar/+/status, newest-first by lastSeen. */
     public List<DiscoveredDevice> getDiscoveredDevices() {
@@ -496,6 +505,10 @@ public class MqttService {
         // Retained "info" message carries the device's HTTP IP + firmware version so the
         // picker can show it without the user having to type 192.168.x.x by hand.
         subscribe("humanradar/+/info", this::handleDiscoveryInfo);
+        // Wildcard cmd/ack so the HealthCheckManager (and any future bulk
+        // command) can observe responses from any device, not just the
+        // currently-active one.
+        subscribe("humanradar/+/cmd/ack", this::handleAnyCmdAck);
     }
 
     private void handleDiscoveryInfo(Mqtt3Publish publish) {
@@ -665,6 +678,53 @@ public class MqttService {
         } catch (Exception e) {
             Log.e(TAG, "Parse config ack error", e);
         }
+    }
+
+    private void handleAnyCmdAck(Mqtt3Publish publish) {
+        try {
+            String topicStr = publish.getTopic().toString();
+            String devName = extractDeviceFromTopic(topicStr);
+            String json = new String(publish.getPayloadAsBytes(), StandardCharsets.UTF_8);
+            JsonObject ack = gson.fromJson(json, JsonObject.class);
+            // Update last-seen for the responding device so any concurrent
+            // discovery-based health logic sees a fresh timestamp too.
+            DiscoveredDevice existing = discoveredDevices.get(devName);
+            if (existing != null) {
+                existing.lastSeenMs = System.currentTimeMillis();
+            }
+            mainHandler.post(() -> {
+                for (AnyCmdAckListener l : anyCmdAckListeners) {
+                    try { l.onAnyCmdAck(devName, ack); } catch (Exception ignored) {}
+                }
+            });
+        } catch (Exception e) {
+            Log.e(TAG, "Parse any-cmd-ack error", e);
+        }
+    }
+
+    /** Flag a discovered device as offline without waiting for its LWT. Used
+     *  by HealthCheckManager when a probe times out — the device is marked
+     *  offline locally so dependent UI (radar overlay, hub list) can react. */
+    public void markDeviceOffline(String deviceName) {
+        if (deviceName == null || deviceName.isEmpty()) return;
+        DiscoveredDevice d = discoveredDevices.get(deviceName);
+        if (d != null) d.status = "offline";
+        if (deviceName.equals(this.deviceName)) {
+            this.deviceStatus = "offline";
+            mainHandler.post(() -> {
+                if (deviceStatusAlerts != null) {
+                    deviceStatusAlerts.onDeviceStatus(deviceName, "offline");
+                }
+                for (StatusListener l : statusListeners) l.onDeviceStatus("offline");
+            });
+        }
+        final long ts = (d != null) ? d.lastSeenMs : System.currentTimeMillis();
+        mainHandler.post(() -> {
+            for (DiscoveryListener l : discoveryListeners) {
+                try { l.onDeviceDiscovered(deviceName, "offline", ts); }
+                catch (Exception ignored) {}
+            }
+        });
     }
 
     private void handleCmdAck(Mqtt3Publish publish) {

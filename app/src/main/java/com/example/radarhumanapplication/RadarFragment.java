@@ -38,7 +38,7 @@ import java.io.OutputStream;
 
 public class RadarFragment extends Fragment
         implements MqttService.TargetListener, MqttService.ConnectionListener,
-                   MqttService.StatusListener,
+                   MqttService.StatusListener, MqttService.DiscoveryListener,
                    AlertManager.RulesChangedListener, SessionReplayer.StateListener {
 
     /** No-frame timeout — if MQTT is still connected but no target frame
@@ -154,6 +154,7 @@ public class RadarFragment extends Fragment
         mqtt.addTargetListener(this);
         mqtt.addConnectionListener(this);
         mqtt.addStatusListener(this);
+        mqtt.addDiscoveryListener(this);
         AlertManager.getInstance().addRulesChangedListener(this);
         staleHandler.postDelayed(staleCheck, 1000);
 
@@ -362,10 +363,41 @@ public class RadarFragment extends Fragment
         mqtt.removeTargetListener(this);
         mqtt.removeConnectionListener(this);
         mqtt.removeStatusListener(this);
+        mqtt.removeDiscoveryListener(this);
         AlertManager.getInstance().removeRulesChangedListener(this);
         SessionReplayer.getInstance().removeStateListener(this);
         staleHandler.removeCallbacks(staleCheck);
         super.onDestroyView();
+    }
+
+    @Override
+    public void onDeviceDiscovered(String deviceName, String status, long lastSeenMs) {
+        if (!isAdded()) return;
+        if (deviceName == null || deviceName.isEmpty()) return;
+        boolean isOffline = "offline".equalsIgnoreCase(status)
+                || "removed".equalsIgnoreCase(status);
+        if (!isOffline) return;
+        // Drop offline device from the secondary-overlay set so its stale
+        // dots disappear from the canvas. The Check Health All sweep relies
+        // on this to keep the radar visually honest.
+        java.util.Set<String> shown = radarView.getShownSecondaryDevices();
+        if (shown.contains(deviceName)) {
+            shown.remove(deviceName);
+            mqtt.unsubscribeDeviceTargets(deviceName);
+            radarView.setShownSecondaryDevices(shown);
+            // Persist so the device doesn't reappear on next launch.
+            requireContext().getSharedPreferences(PREFS_RADAR, 0)
+                    .edit()
+                    .putStringSet(PREFS_KEY_SECONDARY, new java.util.HashSet<>(shown))
+                    .apply();
+        }
+        // If it's the primary too, clear the main layer.
+        String active = mqtt.getDeviceName();
+        if (deviceName.equals(active)) {
+            radarView.clearTargets();
+            lastFrameMs = 0;
+            updateConnectionStatus();
+        }
     }
 
     @Override
