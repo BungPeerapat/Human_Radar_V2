@@ -57,6 +57,13 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private MaterialButton btnAlertFetch, btnAlertPush, btnAlertTestLocal, btnAlertTestRemote;
     private MaterialButton btnPickDeviceIp;
     private MaterialButton btnPickShort, btnPickLong;
+
+    // WiFi Setup UI
+    private RadioGroup wifiMode;
+    private RadioButton wifiModeSta, wifiModeAp;
+    private TextInputEditText wifiSsid, wifiPass;
+    private MaterialButton btnWifiFetch, btnWifiApply;
+    private TextView wifiStatus;
     private TextView alertShortUriLabel, alertLongUriLabel;
     private String pickedShortUri = "";
     private String pickedLongUri  = "";
@@ -146,6 +153,144 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         bindAlertUi(v);
         bindDeviceStatusAlertUi(v);
         bindFirmwareOtaUi(v);
+        bindWifiSetupUi(v);
+    }
+
+    // ------------------------------------------------------------------
+    //  WiFi Setup card
+    // ------------------------------------------------------------------
+    private void bindWifiSetupUi(View v) {
+        wifiMode    = v.findViewById(R.id.wifi_mode);
+        wifiModeSta = v.findViewById(R.id.wifi_mode_sta);
+        wifiModeAp  = v.findViewById(R.id.wifi_mode_ap);
+        wifiSsid    = v.findViewById(R.id.wifi_ssid);
+        wifiPass    = v.findViewById(R.id.wifi_pass);
+        btnWifiFetch = v.findViewById(R.id.btn_wifi_fetch);
+        btnWifiApply = v.findViewById(R.id.btn_wifi_apply);
+        wifiStatus   = v.findViewById(R.id.wifi_status);
+
+        btnWifiFetch.setOnClickListener(view -> onWifiFetch());
+        btnWifiApply.setOnClickListener(view -> onWifiApply());
+    }
+
+    /** GET /api/config and pre-fill the SSID + mode fields. Password is NOT
+     *  pre-filled — even though /api/config returns it, blanking the field
+     *  keeps the user from accidentally re-saving a stale string. */
+    private void onWifiFetch() {
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            doWifiFetch(typedIp);
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Fetch WiFi config from?", p -> {
+            if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                    alertDeviceIp.setText(ip);
+                    doWifiFetch(ip);
+                });
+                return;
+            }
+            alertDeviceIp.setText(p.espHttpIp);
+            doWifiFetch(p.espHttpIp);
+        });
+    }
+
+    private void doWifiFetch(String ip) {
+        setWifiStatus("Fetching from " + ip + "…", false);
+        alertHttp.fetchDeviceConfig(ip, (cfg, err) -> {
+            if (!isAdded()) return;
+            if (cfg == null) {
+                setWifiStatus("Fetch failed: " + err, true);
+                return;
+            }
+            int wm = cfg.has("wm") ? cfg.get("wm").getAsInt() : 0;
+            String ws = cfg.has("ws") ? cfg.get("ws").getAsString() : "";
+            // Don't echo the password back into the UI — see method-level comment.
+            wifiSsid.setText(ws);
+            wifiPass.setText("");
+            if (wm == 1) wifiModeSta.setChecked(true);
+            else         wifiModeAp.setChecked(true);
+            setWifiStatus("Fetched · mode=" + (wm == 1 ? "STA" : "AP")
+                    + " · SSID=" + (ws.isEmpty() ? "(none)" : ws), false);
+        });
+    }
+
+    private void onWifiApply() {
+        boolean sta = wifiModeSta.isChecked();
+        String ssid = getText(wifiSsid);
+        String pass = wifiPass.getText() != null ? wifiPass.getText().toString() : "";
+        if (sta && ssid.isEmpty()) {
+            setWifiStatus("STA mode needs a non-empty SSID", true);
+            return;
+        }
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            confirmWifiApply(typedIp, "(manual)", sta ? 1 : 0, ssid, pass);
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Update WiFi on which device?", p -> {
+            if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                    alertDeviceIp.setText(ip);
+                    confirmWifiApply(ip, p.name, sta ? 1 : 0, ssid, pass);
+                });
+                return;
+            }
+            alertDeviceIp.setText(p.espHttpIp);
+            confirmWifiApply(p.espHttpIp, p.name, sta ? 1 : 0, ssid, pass);
+        });
+    }
+
+    private void confirmWifiApply(String ip, String label, int mode,
+                                  String ssid, String pass) {
+        String summary = mode == 1
+                ? "Switch ESP32 at " + ip + " (" + label + ") to STA mode and join:\n"
+                        + "  SSID: " + ssid + "\n"
+                        + "  Password: " + (pass.isEmpty() ? "(open network)"
+                                                            : "********")
+                : "Switch ESP32 at " + ip + " (" + label + ") to AP mode.";
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle("Apply WiFi & reboot?")
+                .setMessage(summary + "\n\nThe device will reboot. If the new WiFi "
+                        + "is wrong, the device falls back to AP mode after ~10 s.")
+                .setPositiveButton("Apply", (d, w) -> doWifiApply(ip, mode, ssid, pass))
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void doWifiApply(String ip, int mode, String ssid, String pass) {
+        btnWifiApply.setEnabled(false);
+        btnWifiFetch.setEnabled(false);
+        setWifiStatus("Sending WiFi config to " + ip + "…", false);
+        alertHttp.updateWifi(ip, mode, ssid, pass, (ok, err) -> {
+            if (!isAdded()) return;
+            btnWifiApply.setEnabled(true);
+            btnWifiFetch.setEnabled(true);
+            if (Boolean.TRUE.equals(ok)) {
+                setWifiStatus("WiFi saved · device is rebooting…", false);
+                // Clear the password field after a successful apply so it isn't
+                // left lying around in plain text.
+                wifiPass.setText("");
+                new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                        .setTitle("WiFi config sent")
+                        .setMessage("The ESP32 is rebooting. If it connects to "
+                                + (mode == 1 ? "\"" + ssid + "\"" : "AP mode")
+                                + " successfully you will see it publish "
+                                + "online + /info via MQTT within ~30 s. If not, "
+                                + "it falls back to AP mode \"HumanRadar\" "
+                                + "(open network) automatically.")
+                        .setPositiveButton("OK", null)
+                        .show();
+            } else {
+                setWifiStatus("Apply failed: " + err, true);
+            }
+        });
+    }
+
+    private void setWifiStatus(String text, boolean error) {
+        wifiStatus.setText(text);
+        wifiStatus.setTextColor(requireContext().getColor(
+                error ? R.color.radar_red : R.color.radar_green));
     }
 
     // ------------------------------------------------------------------

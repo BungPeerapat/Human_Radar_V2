@@ -439,6 +439,118 @@
                 android:layout_marginTop="8dp" />
         </LinearLayout>
 
+        <!-- WiFi Setup Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/radar_card"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="WiFi Setup"
+                android:textColor="@color/radar_blue"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="4dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Tell the ESP32 which WiFi to join. The device will reboot after saving; if STA fails it falls back to AP mode after ~10 s."
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:layout_marginBottom="10dp" />
+
+            <RadioGroup
+                android:id="@+id/wifi_mode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="6dp">
+                <RadioButton
+                    android:id="@+id/wifi_mode_sta"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="STA (join my WiFi)"
+                    android:textColor="@color/white"
+                    android:checked="true" />
+                <RadioButton
+                    android:id="@+id/wifi_mode_ap"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="AP (device hosts WiFi)"
+                    android:textColor="@color/white" />
+            </RadioGroup>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="WiFi SSID (network name)"
+                android:layout_marginBottom="6dp"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/wifi_ssid"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/white"
+                    android:inputType="text"
+                    android:maxLength="32" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:hint="WiFi password (empty = open network)"
+                android:layout_marginBottom="8dp"
+                app:passwordToggleEnabled="true"
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                xmlns:app="http://schemas.android.com/apk/res-auto">
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/wifi_pass"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/white"
+                    android:inputType="textPassword"
+                    android:maxLength="64" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="6dp">
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_wifi_fetch"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="FETCH CURRENT"
+                    android:layout_marginEnd="4dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_wifi_apply"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="APPLY &amp; RESTART"
+                    android:layout_marginStart="4dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/wifi_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp" />
+        </LinearLayout>
+
         <!-- Device Online/Offline Notifications Card -->
         <LinearLayout
             android:layout_width="match_parent"

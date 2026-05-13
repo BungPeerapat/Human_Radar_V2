@@ -80,6 +80,61 @@ public final class AlertHttpClient {
         io.shutdownNow();
     }
 
+    /** GET http://{deviceIp}/api/config — returns the device's full config blob. */
+    public void fetchDeviceConfig(String deviceIp, Callback<JsonObject> cb) {
+        io.execute(() -> {
+            try {
+                String body = httpGet("http://" + deviceIp + "/api/config");
+                JsonObject o = com.google.gson.JsonParser
+                        .parseString(body).getAsJsonObject();
+                main.post(() -> cb.onResult(o, null));
+            } catch (Exception e) {
+                Log.w(TAG, "fetchDeviceConfig failed", e);
+                main.post(() -> cb.onResult(null, e.getMessage()));
+            }
+        });
+    }
+
+    /**
+     * POST http://{deviceIp}/api/config with WiFi credentials only.
+     *
+     * @param mode 0 = AP (device hosts its own WiFi); 1 = STA (join the user's WiFi)
+     * @param ssid network name (empty when mode = AP)
+     * @param pass network password (empty when mode = AP or open network)
+     *
+     * The device persists the values to NVS and calls ESP.restart() so the
+     * connection is dropped while the response is in flight — that's treated as
+     * a success.
+     */
+    public void updateWifi(String deviceIp, int mode, String ssid, String pass,
+                           Callback<Boolean> cb) {
+        io.execute(() -> {
+            try {
+                JsonObject body = new JsonObject();
+                body.addProperty("wm", mode);
+                body.addProperty("ws", ssid == null ? "" : ssid);
+                body.addProperty("wp", pass == null ? "" : pass);
+                // Device may also be expecting MQTT keys to be present; send empty
+                // sentinels so the handler's getJsonInt() defaults don't overwrite
+                // existing values. Top-level handlers ignore unknown keys.
+                httpPost("http://" + deviceIp + "/api/config", body.toString());
+                main.post(() -> cb.onResult(true, null));
+            } catch (Exception e) {
+                // ESP.restart() drops the socket before the body finishes — that's a
+                // good outcome here. Anything that looks like a connection-reset means
+                // the device accepted the config and is rebooting.
+                String msg = e.getMessage() == null ? "" : e.getMessage();
+                if (msg.contains("EOF") || msg.contains("reset")
+                        || msg.contains("closed") || msg.contains("aborted")) {
+                    main.post(() -> cb.onResult(true, null));
+                } else {
+                    Log.w(TAG, "updateWifi failed", e);
+                    main.post(() -> cb.onResult(false, msg));
+                }
+            }
+        });
+    }
+
     /** POST http://{deviceIp}/api/firmware-rollback — boots the previous OTA partition. */
     public void rollbackFirmware(String deviceIp, Callback<Boolean> cb) {
         io.execute(() -> {
