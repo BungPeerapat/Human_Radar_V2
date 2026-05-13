@@ -39,8 +39,13 @@ void ConfigManager::applyDefaults() {
     memset(&_cfg, 0, sizeof(_cfg));
     _cfg.wifiMode = 0;
     strlcpy(_cfg.deviceName, "HumanRadar", sizeof(_cfg.deviceName));
-    _cfg.mqttProto = 2;        // mqtt/tcp
-    _cfg.mqttPort = 1883;
+    // MQTT broker pre-fill — disabled by default, but the user can flip the
+    // Enable switch on the /settings page without having to re-type host/port
+    // every time. Picked to match the project's reference broker.
+    _cfg.mqttEnabled = 0;
+    _cfg.mqttProto = 2;        // mqtt/tcp (plain TCP — broker accepts on 8883)
+    strlcpy(_cfg.mqttHost, "119.59.99.155", sizeof(_cfg.mqttHost));
+    _cfg.mqttPort = 8883;
     _cfg.publishIntervalMs = 100;
     _cfg.unmannedDelayMs = 5000;
     _cfg.targetTimeoutMs = 1000;
@@ -70,11 +75,15 @@ void ConfigManager::loadFromNVS() {
     _prefs.getString("wifi_ssid", _cfg.wifiSSID, sizeof(_cfg.wifiSSID));
     _prefs.getString("wifi_pass", _cfg.wifiPass, sizeof(_cfg.wifiPass));
 
-    // MQTT
-    _cfg.mqttEnabled = _prefs.getUChar("mqtt_en", 0);
-    _cfg.mqttProto = _prefs.getUChar("mqtt_proto", 2);
-    _prefs.getString("mqtt_host", _cfg.mqttHost, sizeof(_cfg.mqttHost));
-    _cfg.mqttPort = _prefs.getUShort("mqtt_port", 1883);
+    // MQTT — applyDefaults() ran first, so _cfg.mqttHost/_cfg.mqttPort already
+    // hold the pre-fill ("119.59.99.155" : 8883). Only override from NVS when
+    // the key is actually stored, so a fresh device keeps the new defaults.
+    _cfg.mqttEnabled = _prefs.getUChar("mqtt_en", _cfg.mqttEnabled);
+    _cfg.mqttProto = _prefs.getUChar("mqtt_proto", _cfg.mqttProto);
+    if (_prefs.isKey("mqtt_host")) {
+        _prefs.getString("mqtt_host", _cfg.mqttHost, sizeof(_cfg.mqttHost));
+    }
+    _cfg.mqttPort = _prefs.getUShort("mqtt_port", _cfg.mqttPort);
     _prefs.getString("mqtt_user", _cfg.mqttUser, sizeof(_cfg.mqttUser));
     _prefs.getString("mqtt_pass", _cfg.mqttPass, sizeof(_cfg.mqttPass));
 

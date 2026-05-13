@@ -28,13 +28,15 @@
                 android:textStyle="bold"
                 android:layout_marginBottom="12dp" />
 
+            <!-- Exposed-dropdown style so the field doubles as both a free-text
+                 entry and a picker of MQTT-discovered device names. -->
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="Device Name"
+                android:hint="Device Name (tap arrow to pick from MQTT)"
                 android:layout_marginBottom="8dp"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-                <com.google.android.material.textfield.TextInputEditText
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
                     android:id="@+id/cfg_device_name"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

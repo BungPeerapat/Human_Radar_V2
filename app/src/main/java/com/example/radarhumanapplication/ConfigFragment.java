@@ -40,7 +40,10 @@ import com.google.gson.JsonObject;
 
 public class ConfigFragment extends Fragment implements MqttService.ConfigAckListener {
 
-    private TextInputEditText cfgDeviceName, cfgPublishInterval, cfgUnmannedDelay, cfgTargetTimeout;
+    private com.google.android.material.textfield.MaterialAutoCompleteTextView cfgDeviceName;
+    private TextInputEditText cfgPublishInterval, cfgUnmannedDelay, cfgTargetTimeout;
+    private android.widget.ArrayAdapter<String> cfgDeviceNameAdapter;
+    private MqttService.DiscoveryListener cfgDiscoveryListener;
     private MaterialSwitch cfgMultiTarget;
     private Slider cfgSensitivity;
     private MaterialButton btnSendConfig, btnCheckUpdate;
@@ -144,6 +147,27 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         tvAppVersion = v.findViewById(R.id.tv_app_version);
 
         cfgDeviceName.setText(mqtt.getDeviceName());
+        // Populate the dropdown with MQTT-discovered device names and keep it in
+        // sync as more devices come online. The field is still editable so a
+        // brand-new install (no discoveries yet) can type a name manually.
+        cfgDeviceNameAdapter = new android.widget.ArrayAdapter<>(
+                requireContext(),
+                android.R.layout.simple_list_item_1,
+                collectDiscoveredDeviceNames());
+        cfgDeviceName.setAdapter(cfgDeviceNameAdapter);
+        // Force the dropdown to open on focus / tap of the arrow.
+        cfgDeviceName.setOnClickListener(view -> cfgDeviceName.showDropDown());
+        cfgDeviceName.setOnFocusChangeListener((view, has) -> {
+            if (has) cfgDeviceName.showDropDown();
+        });
+        cfgDiscoveryListener = (name, status, lastSeenMs) -> {
+            if (!isAdded() || cfgDeviceNameAdapter == null) return;
+            java.util.List<String> snap = collectDiscoveredDeviceNames();
+            cfgDeviceNameAdapter.clear();
+            cfgDeviceNameAdapter.addAll(snap);
+            cfgDeviceNameAdapter.notifyDataSetChanged();
+        };
+        mqtt.addDiscoveryListener(cfgDiscoveryListener);
         tvAppVersion.setText("Current: v" + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")");
 
         btnSendConfig.setOnClickListener(this::onSendConfig);
@@ -1248,8 +1272,24 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     @Override
     public void onDestroyView() {
         mqtt.removeConfigAckListener(this);
+        if (cfgDiscoveryListener != null) {
+            mqtt.removeDiscoveryListener(cfgDiscoveryListener);
+            cfgDiscoveryListener = null;
+        }
         alertHttp.shutdown();
         super.onDestroyView();
+    }
+
+    /** Build a sorted snapshot of every device name we've seen on
+     *  humanradar/+/status. Empty list when no broker is connected yet. */
+    private java.util.List<String> collectDiscoveredDeviceNames() {
+        java.util.Set<String> set = new java.util.TreeSet<>();
+        for (MqttService.DiscoveredDevice d : mqtt.getDiscoveredDevices()) {
+            if (d != null && d.deviceName != null && !d.deviceName.isEmpty()) {
+                set.add(d.deviceName);
+            }
+        }
+        return new java.util.ArrayList<>(set);
     }
 
     private void onSendConfig(View v) {
@@ -1260,7 +1300,8 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
 
         JsonObject config = new JsonObject();
 
-        String name = getText(cfgDeviceName);
+        String name = cfgDeviceName.getText() != null
+                ? cfgDeviceName.getText().toString().trim() : "";
         if (!name.isEmpty()) config.addProperty("device_name", name);
 
         int pubInt = parseInt(getText(cfgPublishInterval), -1);
