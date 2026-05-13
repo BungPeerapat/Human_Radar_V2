@@ -62,6 +62,8 @@ public class DashboardFragment extends Fragment
     private RecyclerView rvDeviceHub;
     private TextView tvDeviceHubCount, tvDeviceHubEmpty;
     private DeviceHubAdapter deviceHubAdapter;
+    private static final String DEVICE_HUB_PREFS = "device_hub_prefs";
+    private static final String DEVICE_HUB_PINNED_KEY = "pinned_devices";
 
     // Recording UI
     private TextView tvRecStatus;
@@ -122,7 +124,9 @@ public class DashboardFragment extends Fragment
         tvDeviceHubCount = v.findViewById(R.id.tv_device_hub_count);
         tvDeviceHubEmpty = v.findViewById(R.id.tv_device_hub_empty);
         rvDeviceHub.setLayoutManager(new LinearLayoutManager(requireContext()));
-        deviceHubAdapter = new DeviceHubAdapter(requireContext(), this::onDeviceHubTap);
+        deviceHubAdapter = new DeviceHubAdapter(requireContext(),
+                this::onDeviceHubTap,
+                this::onDeviceHubLongPress);
         rvDeviceHub.setAdapter(deviceHubAdapter);
         refreshDeviceHub();
 
@@ -223,12 +227,119 @@ public class DashboardFragment extends Fragment
     private void refreshDeviceHub() {
         if (deviceHubAdapter == null) return;
         List<MqttService.DiscoveredDevice> snap = mqtt.getDiscoveredDevices();
-        deviceHubAdapter.setEntries(snap, mqtt.getDeviceName());
+        java.util.Set<String> pinned = loadPinnedDevices();
+        deviceHubAdapter.setEntries(snap, mqtt.getDeviceName(), pinned);
         tvDeviceHubCount.setText(String.format(Locale.US, "%d device%s",
                 snap.size(), snap.size() == 1 ? "" : "s"));
         boolean empty = snap.isEmpty();
         tvDeviceHubEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
         rvDeviceHub.setVisibility(empty ? View.GONE : View.VISIBLE);
+    }
+
+    private java.util.Set<String> loadPinnedDevices() {
+        java.util.Set<String> stored = requireContext()
+                .getSharedPreferences(DEVICE_HUB_PREFS, Context.MODE_PRIVATE)
+                .getStringSet(DEVICE_HUB_PINNED_KEY, java.util.Collections.emptySet());
+        return stored == null ? java.util.Collections.emptySet()
+                              : new java.util.HashSet<>(stored);
+    }
+
+    private void savePinnedDevices(java.util.Set<String> pinned) {
+        requireContext()
+                .getSharedPreferences(DEVICE_HUB_PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putStringSet(DEVICE_HUB_PINNED_KEY, new java.util.HashSet<>(pinned))
+                .apply();
+    }
+
+    /** Long-press a device row — open a PopupMenu with per-device actions. */
+    private void onDeviceHubLongPress(MqttService.DiscoveredDevice d, View anchor) {
+        if (d == null || d.deviceName == null) return;
+        java.util.Set<String> pinned = loadPinnedDevices();
+        boolean isPinned = pinned.contains(d.deviceName);
+
+        android.widget.PopupMenu pm =
+                new android.widget.PopupMenu(requireContext(), anchor);
+        android.view.Menu menu = pm.getMenu();
+        menu.add(0, 1, 0, isPinned ? "Unpin" : "📌 Pin to top");
+        menu.add(0, 2, 1, "View details");
+        menu.add(0, 3, 2, "🔌 Restart device");
+        menu.add(0, 4, 3, "🗑️ Remove from hub");
+        pm.setOnMenuItemClickListener(item -> {
+            switch (item.getItemId()) {
+                case 1: togglePinned(d.deviceName); return true;
+                case 2: showDeviceDetailsDialog(d);  return true;
+                case 3: confirmRestartDevice(d);     return true;
+                case 4: confirmRemoveDevice(d);      return true;
+                default: return false;
+            }
+        });
+        pm.show();
+    }
+
+    private void togglePinned(String name) {
+        java.util.Set<String> pinned = loadPinnedDevices();
+        if (!pinned.add(name)) pinned.remove(name);
+        savePinnedDevices(pinned);
+        refreshDeviceHub();
+    }
+
+    private void showDeviceDetailsDialog(MqttService.DiscoveredDevice d) {
+        if (!isAdded()) return;
+        StringBuilder body = new StringBuilder();
+        body.append("Name:    ").append(d.deviceName).append('\n');
+        body.append("Status:  ").append(d.isOnline() ? "online" : "offline").append('\n');
+        if (d.ip  != null && !d.ip.isEmpty())  body.append("IP:      ").append(d.ip).append('\n');
+        if (d.fw  != null && !d.fw.isEmpty())  body.append("FW:      v").append(d.fw).append('\n');
+        if (d.mac != null && !d.mac.isEmpty()) body.append("MAC:     ").append(d.mac).append('\n');
+        long age = (System.currentTimeMillis() - d.lastSeenMs) / 1000L;
+        body.append("Last seen: ").append(age).append("s ago");
+
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Device details")
+                .setMessage(body.toString())
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private void confirmRestartDevice(MqttService.DiscoveredDevice d) {
+        if (!isAdded()) return;
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Restart " + d.deviceName + "?")
+                .setMessage("Send a 'restart' MQTT command to this device. "
+                        + "It will be offline for ~5 seconds.")
+                .setPositiveButton("Restart", (dlg, w) -> {
+                    mqtt.sendCommandTo(d.deviceName, "restart");
+                    Toast.makeText(requireContext(),
+                            "Restart sent to " + d.deviceName,
+                            Toast.LENGTH_SHORT).show();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void confirmRemoveDevice(MqttService.DiscoveredDevice d) {
+        if (!isAdded()) return;
+        new AlertDialog.Builder(requireContext())
+                .setTitle("Remove " + d.deviceName + "?")
+                .setMessage("Drop this device from the hub list and from saved "
+                        + "Connection Profiles. The device itself is unaffected — "
+                        + "it will reappear automatically when it publishes again.")
+                .setPositiveButton("Remove", (dlg, w) -> {
+                    mqtt.removeDiscoveredDevice(d.deviceName);
+                    java.util.Set<String> pinned = loadPinnedDevices();
+                    if (pinned.remove(d.deviceName)) savePinnedDevices(pinned);
+                    // Drop matching saved profiles too.
+                    ProfileManager pm = ProfileManager.getInstance();
+                    for (ConnectionProfile p : pm.getProfiles()) {
+                        if (p != null && d.deviceName.equals(p.deviceName)) {
+                            pm.deleteProfile(p.id);
+                        }
+                    }
+                    refreshDeviceHub();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     /** Single-tap: make this row the active MQTT subscription target. */

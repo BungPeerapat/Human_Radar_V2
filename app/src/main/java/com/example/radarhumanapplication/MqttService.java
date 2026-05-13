@@ -330,6 +330,21 @@ public class MqttService {
         return new java.util.HashSet<>(extraTargetSubs);
     }
 
+    /** Drop a device from the in-memory discovery map. Used by the Dashboard
+     *  Hub's Remove action — does NOT unsubscribe wildcards (those keep
+     *  catching the device if it ever comes back online). */
+    public void removeDiscoveredDevice(String deviceName) {
+        if (deviceName == null || deviceName.isEmpty()) return;
+        discoveredDevices.remove(deviceName);
+        mainHandler.post(() -> {
+            for (DiscoveryListener l : discoveryListeners) {
+                try { l.onDeviceDiscovered(deviceName, "removed",
+                        System.currentTimeMillis()); }
+                catch (Exception ignored) {}
+            }
+        });
+    }
+
     /**
      * Public dispatch hook used by {@link com.example.radarhumanapplication.recording.SessionReplayer}
      * to feed replayed frames into the same fan-out as live MQTT. Always runs on the main
@@ -676,6 +691,25 @@ public class MqttService {
 
     public void sendCommand(String cmd) {
         sendCommand(cmd, null);
+    }
+
+    /**
+     * Publish a command targeted at a specific device, not necessarily the
+     * currently-active one. Used by the Dashboard Device Hub's per-row actions
+     * (Restart / Reboot / ...). Falls back to the active topic if deviceName
+     * is empty.
+     */
+    public void sendCommandTo(String deviceName, String cmd) {
+        if (!connected || client == null) return;
+        if (deviceName == null || deviceName.isEmpty()) {
+            sendCommand(cmd);
+            return;
+        }
+        JsonObject payload = new JsonObject();
+        payload.addProperty("request_id",
+                UUID.randomUUID().toString().substring(0, 8));
+        payload.addProperty("cmd", cmd);
+        publish("humanradar/" + deviceName + "/cmd", payload.toString());
     }
 
     public void sendCommand(String cmd, JsonObject extras) {

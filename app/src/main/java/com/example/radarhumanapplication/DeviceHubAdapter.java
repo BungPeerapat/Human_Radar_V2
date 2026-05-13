@@ -13,17 +13,17 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * RecyclerView adapter for the Dashboard's Device Hub. Renders one row per
- * device that MQTT discovery has seen, with a status dot, IP/fw line, "just
- * now"-style freshness, and an ACTIVE badge when the row matches whatever
- * {@link MqttService#getDeviceName()} currently points at.
+ * MQTT-discovered device with a status dot, IP/fw line, freshness, an ACTIVE
+ * badge for the currently-subscribed device, and a 📌 indicator for pinned
+ * devices. Pinned rows sort first.
  *
- * <p>Tap a row to invoke {@link MqttService#switchActiveDevice(String)}.
- * The host fragment is expected to refresh the data set via
- * {@link #setEntries(List, String)} whenever discovery changes or the active
- * device changes — the adapter does no observation of its own.</p>
+ * <p>Single tap → {@link OnDeviceTap#onDeviceTap(MqttService.DiscoveredDevice)}.
+ * Long press → {@link OnDeviceLongPress#onDeviceLongPress(MqttService.DiscoveredDevice, View)}
+ * — typically opens a context menu anchored to the row.</p>
  */
 public class DeviceHubAdapter
         extends RecyclerView.Adapter<DeviceHubAdapter.VH> {
@@ -31,22 +31,48 @@ public class DeviceHubAdapter
     public interface OnDeviceTap {
         void onDeviceTap(MqttService.DiscoveredDevice d);
     }
+    public interface OnDeviceLongPress {
+        void onDeviceLongPress(MqttService.DiscoveredDevice d, View anchor);
+    }
 
     private final Context context;
     private final OnDeviceTap onTap;
+    private final OnDeviceLongPress onLong;
     private final List<MqttService.DiscoveredDevice> entries = new ArrayList<>();
     private String activeDeviceName = "";
+    private Set<String> pinned = java.util.Collections.emptySet();
 
     public DeviceHubAdapter(Context context, OnDeviceTap onTap) {
-        this.context = context;
-        this.onTap = onTap;
+        this(context, onTap, null);
     }
 
-    public void setEntries(List<MqttService.DiscoveredDevice> list, String activeName) {
+    public DeviceHubAdapter(Context context, OnDeviceTap onTap,
+                            OnDeviceLongPress onLong) {
+        this.context = context;
+        this.onTap = onTap;
+        this.onLong = onLong;
+    }
+
+    public void setEntries(List<MqttService.DiscoveredDevice> list,
+                           String activeName, Set<String> pinnedNames) {
         entries.clear();
         if (list != null) entries.addAll(list);
         this.activeDeviceName = activeName == null ? "" : activeName;
+        this.pinned = pinnedNames == null ? java.util.Collections.emptySet() : pinnedNames;
+        // Pinned devices first, then online, then by lastSeen desc.
+        java.util.Collections.sort(entries, (a, b) -> {
+            boolean ap = pinned.contains(a.deviceName);
+            boolean bp = pinned.contains(b.deviceName);
+            if (ap != bp) return ap ? -1 : 1;
+            if (a.isOnline() != b.isOnline()) return a.isOnline() ? -1 : 1;
+            return Long.compare(b.lastSeenMs, a.lastSeenMs);
+        });
         notifyDataSetChanged();
+    }
+
+    /** Backwards-compat shim for callers that don't track pinning yet. */
+    public void setEntries(List<MqttService.DiscoveredDevice> list, String activeName) {
+        setEntries(list, activeName, java.util.Collections.emptySet());
     }
 
     @NonNull
@@ -64,7 +90,8 @@ public class DeviceHubAdapter
         h.dot.setTextColor(online
                 ? Color.parseColor("#00FF88")
                 : Color.parseColor("#FF6666"));
-        h.name.setText(d.deviceName);
+        boolean isPinned = pinned.contains(d.deviceName);
+        h.name.setText((isPinned ? "📌 " : "") + d.deviceName);
 
         StringBuilder detail = new StringBuilder();
         if (d.ip != null && !d.ip.isEmpty()) detail.append(d.ip);
@@ -82,6 +109,13 @@ public class DeviceHubAdapter
 
         h.itemView.setOnClickListener(v -> {
             if (onTap != null) onTap.onDeviceTap(d);
+        });
+        h.itemView.setOnLongClickListener(v -> {
+            if (onLong != null) {
+                onLong.onDeviceLongPress(d, v);
+                return true;
+            }
+            return false;
         });
     }
 
