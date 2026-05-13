@@ -11,9 +11,13 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+
+import com.example.radarhumanapplication.health.PowerHealthFormatter;
 
 /**
  * RecyclerView adapter for the Dashboard's Device Hub. Renders one row per
@@ -41,6 +45,10 @@ public class DeviceHubAdapter
     private final List<MqttService.DiscoveredDevice> entries = new ArrayList<>();
     private String activeDeviceName = "";
     private Set<String> pinned = java.util.Collections.emptySet();
+    /** deviceName → last-known PowerHealthFormatter level (0/1/2). Empty until
+     *  the user runs a health check; entries linger until the next round so
+     *  the chip stays visible on each row. */
+    private final Map<String, Integer> powerLevels = new HashMap<>();
 
     public DeviceHubAdapter(Context context, OnDeviceTap onTap) {
         this(context, onTap, null);
@@ -75,6 +83,21 @@ public class DeviceHubAdapter
         setEntries(list, activeName, java.util.Collections.emptySet());
     }
 
+    /** Replace the device→powerLevel map and re-render. Call after a Check
+     *  Health (all or one) round so each row's power chip stays accurate. */
+    public void setPowerLevels(Map<String, Integer> levels) {
+        powerLevels.clear();
+        if (levels != null) powerLevels.putAll(levels);
+        notifyDataSetChanged();
+    }
+
+    /** Merge a single device's power level into the existing map. */
+    public void putPowerLevel(String deviceName, int level) {
+        if (deviceName == null || deviceName.isEmpty()) return;
+        powerLevels.put(deviceName, level);
+        notifyDataSetChanged();
+    }
+
     @NonNull
     @Override
     public VH onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
@@ -107,6 +130,14 @@ public class DeviceHubAdapter
                 && activeDeviceName.equals(d.deviceName);
         h.badge.setVisibility(isActive ? View.VISIBLE : View.GONE);
 
+        Integer lvl = powerLevels.get(d.deviceName);
+        if (lvl != null && lvl >= 0) {
+            h.powerChip.setText(PowerHealthFormatter.levelEmoji(lvl));
+            h.powerChip.setVisibility(View.VISIBLE);
+        } else {
+            h.powerChip.setVisibility(View.GONE);
+        }
+
         h.itemView.setOnClickListener(v -> {
             if (onTap != null) onTap.onDeviceTap(d);
         });
@@ -132,13 +163,14 @@ public class DeviceHubAdapter
     }
 
     static class VH extends RecyclerView.ViewHolder {
-        final TextView dot, name, detail, badge;
+        final TextView dot, name, detail, badge, powerChip;
         VH(View v) {
             super(v);
-            dot    = v.findViewById(R.id.dh_dot);
-            name   = v.findViewById(R.id.dh_name);
-            detail = v.findViewById(R.id.dh_detail);
-            badge  = v.findViewById(R.id.dh_active_badge);
+            dot       = v.findViewById(R.id.dh_dot);
+            name      = v.findViewById(R.id.dh_name);
+            detail    = v.findViewById(R.id.dh_detail);
+            badge     = v.findViewById(R.id.dh_active_badge);
+            powerChip = v.findViewById(R.id.dh_power_chip);
         }
     }
 }

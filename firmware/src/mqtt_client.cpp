@@ -1,5 +1,6 @@
 #include "mqtt_client.h"
 #include "logger.h"
+#include "power_monitor.h"
 
 MqttRadarClient mqttClient;
 
@@ -457,6 +458,7 @@ void MqttRadarClient::cmdRestart(const char* requestId) {
 void MqttRadarClient::cmdFactoryReset(const char* requestId) {
     Log::info(TAG_MQTT, "CMD: factory_reset");
     configManager.resetToDefaults();
+    PowerMonitor::resetCounters();
     char ack[192];
     snprintf(ack, sizeof(ack),
         "{\"request_id\":\"%s\",\"status\":\"ok\",\"message\":\"reset done, restarting\"}", requestId);
@@ -501,19 +503,30 @@ void MqttRadarClient::cmdHealth(const char* requestId) {
             ? WiFi.softAPIP().toString()
             : WiFi.localIP().toString();
     long rssi = (WiFi.getMode() == WIFI_AP) ? 0 : WiFi.RSSI();
+    PowerMonitor::Snapshot pwr = PowerMonitor::snapshot();
+    float tempC = isnan(pwr.dieTempC) ? -1.0f : pwr.dieTempC;
 
-    char ack[384];
+    char ack[512];
     snprintf(ack, sizeof(ack),
         "{\"request_id\":\"%s\",\"status\":\"ok\",\"cmd\":\"health\","
         "\"device\":\"%s\",\"fw\":\"%s\",\"ip\":\"%s\","
-        "\"uptime\":%lu,\"heap\":%lu,\"rssi\":%ld}",
+        "\"uptime\":%lu,\"heap\":%lu,\"rssi\":%ld,"
+        "\"reset\":%u,\"bo\":%lu,\"panic\":%lu,\"boots\":%lu,"
+        "\"temp\":%.1f,\"pwr_score\":%u,\"pwr_lvl\":%u}",
         requestId,
         strlen(cfg.deviceName) > 0 ? cfg.deviceName : "HumanRadar",
         FW_VERSION,
         ip.c_str(),
         (unsigned long)(millis() / 1000UL),
         (unsigned long)ESP.getFreeHeap(),
-        rssi);
+        rssi,
+        (unsigned)pwr.resetReason,
+        (unsigned long)pwr.brownoutCountTotal,
+        (unsigned long)pwr.panicCountTotal,
+        (unsigned long)pwr.bootCount,
+        tempC,
+        (unsigned)pwr.healthScore,
+        (unsigned)pwr.healthLevel);
     _mqtt.publish(_topicCmdAck, ack);
 }
 

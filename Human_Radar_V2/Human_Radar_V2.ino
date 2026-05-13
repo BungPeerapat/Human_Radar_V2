@@ -43,6 +43,7 @@
 #include "mqtt_client.h"
 #include "alert_pattern.h"
 #include "logger.h"
+#include "power_monitor.h"
 
 // ============================================================================
 // Pin Configuration - ESP32-WROOM32
@@ -162,6 +163,10 @@ void setup() {
     Log::info(TAG_SYSTEM, "  Board: ESP32-WROOM32");
     Log::info(TAG_SYSTEM, "  MQTT + Remote Config + Log Viewer");
     Log::info(TAG_SYSTEM, "========================================");
+
+    // Snapshot reset reason and bump brown-out / panic counters in NVS so the
+    // app can report power health without any extra hardware.
+    PowerMonitor::begin();
 
     // Alert pattern (LED + buzzer on GPIO26). Init early so WiFi connect blink works.
     alertPattern.begin(ALERT_PIN);

@@ -406,8 +406,13 @@ public class DashboardFragment extends Fragment
                 .getInstance()
                 .checkOne(d.deviceName, HEALTH_TIMEOUT_MS, (results, offline) -> {
                     if (!isAdded() || results.isEmpty()) return;
+                    com.example.radarhumanapplication.health.HealthCheckManager.HealthResult r
+                            = results.get(0);
+                    if (deviceHubAdapter != null && r.powerLevel >= 0) {
+                        deviceHubAdapter.putPowerLevel(r.deviceName, r.powerLevel);
+                    }
                     refreshDeviceHub();
-                    showHealthOneDialog(results.get(0));
+                    showHealthOneDialog(r);
                 });
         if (!started) {
             Toast.makeText(requireContext(),
@@ -418,6 +423,8 @@ public class DashboardFragment extends Fragment
     private void showHealthOneDialog(
             com.example.radarhumanapplication.health.HealthCheckManager.HealthResult r) {
         if (!isAdded() || r == null) return;
+        com.example.radarhumanapplication.health.PowerHealthFormatter pf =
+                null; // static-only
         StringBuilder body = new StringBuilder();
         body.append("Device: ").append(r.deviceName).append('\n');
         body.append(r.responded ? "Status: ✅ ONLINE\n" : "Status: ❌ OFFLINE (no reply in "
@@ -427,7 +434,27 @@ public class DashboardFragment extends Fragment
             if (!r.ip.isEmpty()) body.append("IP:     ").append(r.ip).append('\n');
             if (r.uptimeSec > 0)  body.append("Uptime: ").append(formatUptime(r.uptimeSec)).append('\n');
             if (r.heapBytes > 0)  body.append("Heap:   ").append(r.heapBytes / 1024).append(" kB\n");
-            if (r.rssiDb != 0)    body.append("RSSI:   ").append(r.rssiDb).append(" dBm");
+            if (r.rssiDb != 0)    body.append("RSSI:   ").append(r.rssiDb).append(" dBm\n");
+            if (r.powerLevel >= 0) {
+                body.append('\n');
+                body.append("Power: ").append(
+                        com.example.radarhumanapplication.health.PowerHealthFormatter
+                                .levelEmoji(r.powerLevel)).append(' ');
+                body.append(com.example.radarhumanapplication.health.PowerHealthFormatter
+                        .levelLabel(r.powerLevel));
+                if (r.powerScore >= 0) {
+                    body.append("  (score ").append(r.powerScore).append("/100)");
+                }
+                body.append('\n');
+                body.append(com.example.radarhumanapplication.health.PowerHealthFormatter
+                        .causeLine(r)).append('\n');
+                if (r.bootCount > 0) body.append("Boots:  ").append(r.bootCount).append('\n');
+                if (r.brownoutCount > 0) body.append("Brown-outs lifetime: ")
+                        .append(r.brownoutCount).append('\n');
+                if (!Float.isNaN(r.dieTempC)) body.append("Die temp: ").append(
+                        com.example.radarhumanapplication.health.PowerHealthFormatter
+                                .formatTemp(r.dieTempC));
+            }
         }
         new AlertDialog.Builder(requireContext())
                 .setTitle("Health check")
@@ -453,11 +480,36 @@ public class DashboardFragment extends Fragment
                 body.append("  •  v").append(r.fw.isEmpty() ? "?" : r.fw);
                 if (r.uptimeSec > 0) body.append("  up ").append(formatUptime(r.uptimeSec));
                 if (r.rssiDb != 0)   body.append("  ").append(r.rssiDb).append(" dBm");
+                if (r.powerLevel >= 0) {
+                    body.append("\n   Power: ").append(
+                            com.example.radarhumanapplication.health.PowerHealthFormatter
+                                    .levelEmoji(r.powerLevel)).append(' ');
+                    body.append(com.example.radarhumanapplication.health.PowerHealthFormatter
+                            .levelLabel(r.powerLevel));
+                    if (r.brownoutCount > 0) {
+                        body.append("  •  ").append(r.brownoutCount).append(" brown-out")
+                                .append(r.brownoutCount == 1 ? "" : "s");
+                    }
+                    if (!Float.isNaN(r.dieTempC) && r.dieTempC > 70f) {
+                        body.append("  •  ").append(
+                                com.example.radarhumanapplication.health.PowerHealthFormatter
+                                        .formatTemp(r.dieTempC));
+                    }
+                }
             }
             body.append('\n');
         }
         if (!offline.isEmpty()) {
             body.append("\nStale targets cleared from radar.");
+        }
+        // Update hub rows so each device row shows the latest power-health chip.
+        if (deviceHubAdapter != null) {
+            java.util.Map<String, Integer> levels = new java.util.HashMap<>();
+            for (com.example.radarhumanapplication.health.HealthCheckManager.HealthResult r
+                    : results) {
+                if (r.powerLevel >= 0) levels.put(r.deviceName, r.powerLevel);
+            }
+            deviceHubAdapter.setPowerLevels(levels);
         }
         new AlertDialog.Builder(requireContext())
                 .setTitle("Health check — all devices")

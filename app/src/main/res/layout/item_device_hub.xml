@@ -49,6 +49,16 @@
     </LinearLayout>
 
     <TextView
+        android:id="@+id/dh_power_chip"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="🟢"
+        android:textSize="14sp"
+        android:layout_marginEnd="6dp"
+        android:visibility="gone"
+        android:contentDescription="Power health status" />
+
+    <TextView
         android:id="@+id/dh_active_badge"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

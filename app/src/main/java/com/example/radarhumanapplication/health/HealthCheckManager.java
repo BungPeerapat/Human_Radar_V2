@@ -36,10 +36,24 @@ public class HealthCheckManager implements MqttService.AnyCmdAckListener {
         public final long rssiDb;
         public final String fw;
         public final String ip;
+        /** ESP32 esp_reset_reason_t. -1 when not reported. */
+        public final int   resetReason;
+        public final long  brownoutCount;
+        public final long  panicCount;
+        public final long  bootCount;
+        /** Die temp °C; NaN sentinel when chip doesn't report. */
+        public final float dieTempC;
+        /** Firmware-derived power score 0..100; -1 if absent. */
+        public final int   powerScore;
+        /** Firmware-derived level: 0 OK, 1 Warning, 2 Critical; -1 absent. */
+        public final int   powerLevel;
 
         public HealthResult(String deviceName, boolean responded,
                             long uptimeSec, long heapBytes, long rssiDb,
-                            String fw, String ip) {
+                            String fw, String ip,
+                            int resetReason, long brownoutCount,
+                            long panicCount, long bootCount,
+                            float dieTempC, int powerScore, int powerLevel) {
             this.deviceName = deviceName;
             this.responded = responded;
             this.uptimeSec = uptimeSec;
@@ -47,6 +61,13 @@ public class HealthCheckManager implements MqttService.AnyCmdAckListener {
             this.rssiDb = rssiDb;
             this.fw = fw == null ? "" : fw;
             this.ip = ip == null ? "" : ip;
+            this.resetReason = resetReason;
+            this.brownoutCount = brownoutCount;
+            this.panicCount = panicCount;
+            this.bootCount = bootCount;
+            this.dieTempC = dieTempC;
+            this.powerScore = powerScore;
+            this.powerLevel = powerLevel;
         }
     }
 
@@ -111,7 +132,8 @@ public class HealthCheckManager implements MqttService.AnyCmdAckListener {
         attachIfNeeded();
         inflight = new LinkedHashMap<>();
         for (String n : deviceNames) {
-            inflight.put(n, new HealthResult(n, false, 0, 0, 0, "", ""));
+            inflight.put(n, new HealthResult(n, false, 0, 0, 0, "", "",
+                    -1, 0, 0, 0, Float.NaN, -1, -1));
         }
         pendingListener = listener;
 
@@ -134,14 +156,28 @@ public class HealthCheckManager implements MqttService.AnyCmdAckListener {
             String cmd = ack.has("cmd") ? safeString(ack, "cmd") : "";
             // Only health-shaped acks count as a positive response.
             if (!"health".equalsIgnoreCase(cmd)) return;
+            float temp = Float.NaN;
+            if (ack.has("temp")) {
+                try { float t = ack.get("temp").getAsFloat();
+                      // Firmware emits -1 sentinel when die sensor missing.
+                      if (t > -0.5f) temp = t; }
+                catch (Exception ignored) {}
+            }
             HealthResult r = new HealthResult(
                     deviceName,
                     /*responded=*/ true,
-                    ack.has("uptime") ? safeLong(ack, "uptime") : 0,
-                    ack.has("heap") ? safeLong(ack, "heap") : 0,
-                    ack.has("rssi") ? safeLong(ack, "rssi") : 0,
+                    safeLong(ack, "uptime"),
+                    safeLong(ack, "heap"),
+                    safeLong(ack, "rssi"),
                     safeString(ack, "fw"),
-                    safeString(ack, "ip"));
+                    safeString(ack, "ip"),
+                    ack.has("reset")     ? (int) safeLong(ack, "reset")     : -1,
+                    safeLong(ack, "bo"),
+                    safeLong(ack, "panic"),
+                    safeLong(ack, "boots"),
+                    temp,
+                    ack.has("pwr_score") ? (int) safeLong(ack, "pwr_score") : -1,
+                    ack.has("pwr_lvl")   ? (int) safeLong(ack, "pwr_lvl")   : -1);
             inflight.put(deviceName, r);
             // If every device has responded, finish early.
             boolean allIn = true;
