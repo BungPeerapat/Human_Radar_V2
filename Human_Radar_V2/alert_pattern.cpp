@@ -125,34 +125,39 @@ void AlertPattern::startPatternFor_(uint8_t prev, uint8_t now) {
 }
 
 void AlertPattern::onFirmwareUpdateStart() {
-    fwUpdateActive_ = true;
+    fwUpdateMode_    = FwUpdateMode::InProgress;
     fwUpdateStartMs_ = millis();
-    Log::info(TAG, "Firmware-update indicator pattern started");
+    Log::info(TAG, "OTA heartbeat started (1s/1s, indefinite)");
+}
+
+void AlertPattern::onFirmwareUpdateFinish() {
+    fwUpdateMode_    = FwUpdateMode::Finishing;
+    fwUpdateStartMs_ = millis();
+    Log::info(TAG, "OTA finishing pattern: 4x 250ms blink");
 }
 
 namespace {
-// Returns true if the firmware-update indicator wants the pin HIGH at this elapsed time.
-bool computeFwUpdateLevel(uint32_t elapsedMs, bool* doneOut) {
-    constexpr uint32_t SLOW_CYCLES   = 3;
-    constexpr uint32_t SLOW_PERIOD   = 2000;  // 1s on + 1s off
-    constexpr uint32_t SLOW_ON       = 1000;
-    constexpr uint32_t SLOW_TOTAL    = SLOW_CYCLES * SLOW_PERIOD;       //  6000 ms
-    constexpr uint32_t FAST_CYCLES   = 2;
-    constexpr uint32_t FAST_PERIOD   = 500;   // 0.25s on + 0.25s off
-    constexpr uint32_t FAST_ON       = 250;
-    constexpr uint32_t FAST_TOTAL    = FAST_CYCLES * FAST_PERIOD;       //  1000 ms
-    constexpr uint32_t TOTAL         = SLOW_TOTAL + FAST_TOTAL;         //  7000 ms
+constexpr uint32_t OTA_HEARTBEAT_PERIOD = 2000;  // 1s on / 1s off
+constexpr uint32_t OTA_HEARTBEAT_ON     = 1000;
+constexpr uint32_t OTA_FINISH_CYCLES    = 4;
+constexpr uint32_t OTA_FINISH_PERIOD    = 500;   // 0.25s on + 0.25s off
+constexpr uint32_t OTA_FINISH_ON        = 250;
+constexpr uint32_t OTA_FINISH_TOTAL     = OTA_FINISH_CYCLES * OTA_FINISH_PERIOD; // 2000 ms
 
-    if (elapsedMs >= TOTAL) {
+// Heartbeat is unbounded — caller decides when to call onFirmwareUpdateFinish().
+bool computeOtaHeartbeatLevel(uint32_t elapsedMs) {
+    return (elapsedMs % OTA_HEARTBEAT_PERIOD) < OTA_HEARTBEAT_ON;
+}
+
+// 4× 0.25s blinks then done. Returns level + sets *doneOut once the four
+// pulses have played out.
+bool computeOtaFinishLevel(uint32_t elapsedMs, bool* doneOut) {
+    if (elapsedMs >= OTA_FINISH_TOTAL) {
         if (doneOut) *doneOut = true;
         return false;
     }
     if (doneOut) *doneOut = false;
-    if (elapsedMs < SLOW_TOTAL) {
-        return (elapsedMs % SLOW_PERIOD) < SLOW_ON;
-    }
-    uint32_t fastElapsed = elapsedMs - SLOW_TOTAL;
-    return (fastElapsed % FAST_PERIOD) < FAST_ON;
+    return (elapsedMs % OTA_FINISH_PERIOD) < OTA_FINISH_ON;
 }
 }
 
@@ -185,12 +190,16 @@ void AlertPattern::update() {
 
     // Resolve final pin level: firmware-update indicator > alert > wifi > off
     bool out = false;
-    if (fwUpdateActive_) {
+    if (fwUpdateMode_ == FwUpdateMode::InProgress) {
+        // Indefinite heartbeat — never auto-completes; finish only when the
+        // caller explicitly switches us to Finishing or None.
+        out = computeOtaHeartbeatLevel(now - fwUpdateStartMs_);
+    } else if (fwUpdateMode_ == FwUpdateMode::Finishing) {
         bool done = false;
-        out = computeFwUpdateLevel(now - fwUpdateStartMs_, &done);
+        out = computeOtaFinishLevel(now - fwUpdateStartMs_, &done);
         if (done) {
-            fwUpdateActive_ = false;
-            Log::info(TAG, "Firmware-update indicator pattern completed");
+            fwUpdateMode_ = FwUpdateMode::None;
+            Log::info(TAG, "OTA finishing pattern completed");
         }
     } else if (alertPhase_ != AlertPhase::Idle) {
         out = alertLevel_;

@@ -152,11 +152,25 @@ void WebRadarServer::setupHTTP() {
                              Update.errorString() + "\"}";
                 Log::error(TAG_SYSTEM, "OTA failed: %s", Update.errorString());
                 _http.send(500, "application/json", err);
+                // Cancel the heartbeat — the device isn't actually about
+                // to reboot into new firmware.
+                alertPattern.update();
             } else {
                 _http.send(200, "application/json",
                            "{\"ok\":true,\"restarting\":true}");
-                Log::info(TAG_SYSTEM, "OTA complete, restarting in 1s");
-                delay(1000);
+                Log::info(TAG_SYSTEM,
+                          "OTA complete, playing finish pattern then restart");
+                // Switch GPIO26 from the indefinite 1s/1s heartbeat to the
+                // 4× 250ms "about to reboot" pattern. Busy-wait until it
+                // finishes so the user actually sees the four blinks
+                // instead of a single flash + immediate reboot.
+                alertPattern.onFirmwareUpdateFinish();
+                uint32_t finishDeadline = millis() + 2500;  // 2s pattern + slack
+                while (alertPattern.isFirmwareUpdateActive()
+                        && (int32_t)(millis() - finishDeadline) < 0) {
+                    alertPattern.update();
+                    delay(10);
+                }
                 ESP.restart();
             }
         },
@@ -166,8 +180,9 @@ void WebRadarServer::setupHTTP() {
             switch (upload.status) {
                 case UPLOAD_FILE_START:
                     Log::info(TAG_SYSTEM, "OTA start: %s", upload.filename.c_str());
-                    // Light up the "I'm receiving firmware" indicator on GPIO26:
-                    // 3 × slow (1s on/1s off) + 2 × fast (0.25s on/0.25s off).
+                    // Indefinite 1s ON / 1s OFF heartbeat on GPIO26 for the
+                    // entire upload — switched to the 4× 250 ms finish
+                    // pattern only after Update.end() succeeds.
                     alertPattern.onFirmwareUpdateStart();
                     alertPattern.update();
                     // Start an OTA write to the "next" partition. Size unknown =

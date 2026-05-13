@@ -67,15 +67,31 @@ public:
     void triggerTest(uint8_t shortCount, bool longPrefix);
 
     /**
-     * Start the firmware-update indicator pattern on GPIO26 with highest priority:
-     *  - 3 cycles of 1s ON / 1s OFF (slow heartbeat, ~6 s)
-     *  - 2 cycles of 0.25s ON / 0.25s OFF (fast tail, ~1 s)
-     *  - Total ~7 s, then auto-stops
-     *
-     * Overrides target alerts and WiFi blink while active so the user knows the
-     * device is busy receiving firmware and must not be powered off.
+     * Begin the "OTA in progress" indicator: 1s ON / 1s OFF heartbeat looped
+     * indefinitely on GPIO26. Overrides target alerts and the WiFi blink so
+     * the user knows the device is busy receiving firmware and must not be
+     * powered off. Stays active until {@link #onFirmwareUpdateFinish} is
+     * called or the chip reboots.
      */
     void onFirmwareUpdateStart();
+
+    /**
+     * Switch from the heartbeat to the "OTA complete, about to reboot"
+     * indicator: 4 × 250 ms ON / 250 ms OFF (2 s total), then auto-stops.
+     * Designed to be played just before {@code ESP.restart()} so the
+     * user sees a clean handoff between "uploading" and "rebooting".
+     */
+    void onFirmwareUpdateFinish();
+
+    /**
+     * @return true while either the OTA heartbeat or the finish pattern is
+     *         still running. Callers can busy-wait on this (with periodic
+     *         {@link #update} calls) to defer a reboot until the indicator
+     *         finishes.
+     */
+    bool isFirmwareUpdateActive() const {
+        return fwUpdateMode_ != FwUpdateMode::None;
+    }
 
     /// Must be invoked every iteration of loop().
     void update();
@@ -120,9 +136,13 @@ private:
     uint32_t   candidateSince_  = 0;
     bool       candidateActive_ = false;
 
-    // Firmware-update indicator (highest priority, time-driven)
-    bool       fwUpdateActive_ = false;
-    uint32_t   fwUpdateStartMs_ = 0;
+    // Firmware-update indicator (highest priority).
+    //   None       — pin available to alert/wifi layers
+    //   InProgress — 1s/1s heartbeat, indefinite
+    //   Finishing  — 4× 250ms blink, auto-stops after ~2 s
+    enum class FwUpdateMode : uint8_t { None, InProgress, Finishing };
+    FwUpdateMode fwUpdateMode_      = FwUpdateMode::None;
+    uint32_t     fwUpdateStartMs_   = 0;
 
     // Output
     bool       lastWrittenLevel_ = false;
