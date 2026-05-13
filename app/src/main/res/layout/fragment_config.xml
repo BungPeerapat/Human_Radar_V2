@@ -490,13 +490,15 @@
                     android:textColor="@color/white" />
             </RadioGroup>
 
+            <!-- Exposed-dropdown so the SSID field doubles as a manual entry +
+                 picker of nearby networks the phone can scan. -->
             <com.google.android.material.textfield.TextInputLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="WiFi SSID (network name)"
+                android:hint="WiFi SSID (tap ▾ to pick a nearby network)"
                 android:layout_marginBottom="6dp"
-                style="@style/Widget.Material3.TextInputLayout.OutlinedBox">
-                <com.google.android.material.textfield.TextInputEditText
+                style="@style/Widget.Material3.TextInputLayout.OutlinedBox.ExposedDropdownMenu">
+                <com.google.android.material.textfield.MaterialAutoCompleteTextView
                     android:id="@+id/wifi_ssid"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

@@ -64,9 +64,13 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     // WiFi Setup UI
     private RadioGroup wifiMode;
     private RadioButton wifiModeSta, wifiModeAp;
-    private TextInputEditText wifiSsid, wifiPass;
+    private com.google.android.material.textfield.MaterialAutoCompleteTextView wifiSsid;
+    private TextInputEditText wifiPass;
     private MaterialButton btnWifiFetch, btnWifiApply;
     private TextView wifiStatus;
+    private final WifiScanHelper wifiScanHelper = new WifiScanHelper();
+    private android.widget.ArrayAdapter<String> wifiSsidAdapter;
+    private ActivityResultLauncher<String[]> wifiPermLauncher;
     private TextView alertShortUriLabel, alertLongUriLabel;
     private String pickedShortUri = "";
     private String pickedLongUri  = "";
@@ -121,6 +125,21 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         pickFirmwareLauncher = registerForActivityResult(
                 new ActivityResultContracts.OpenDocument(),
                 this::onFirmwarePicked);
+        // WiFi-scan permission flips per SDK level — RequestMultiplePermissions
+        // handles both ACCESS_FINE_LOCATION (<=API 32) and NEARBY_WIFI_DEVICES
+        // (API 33+) without forcing us to branch at registration time.
+        wifiPermLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestMultiplePermissions(),
+                granted -> {
+                    boolean ok = !granted.isEmpty();
+                    for (Boolean b : granted.values()) if (!Boolean.TRUE.equals(b)) ok = false;
+                    if (ok) {
+                        triggerWifiScan(true);
+                    } else {
+                        setWifiStatus("Permission denied — type the SSID manually",
+                                true);
+                    }
+                });
     }
 
     @Nullable
@@ -195,6 +214,56 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
 
         btnWifiFetch.setOnClickListener(view -> onWifiFetch());
         btnWifiApply.setOnClickListener(view -> onWifiApply());
+
+        // SSID dropdown — empty until first scan. Seed with the currently-saved
+        // WiFi (if any) so the user sees something even before scanning.
+        wifiSsidAdapter = new android.widget.ArrayAdapter<>(
+                requireContext(),
+                android.R.layout.simple_list_item_1,
+                new java.util.ArrayList<>());
+        wifiSsid.setAdapter(wifiSsidAdapter);
+        // Scan once when the user focuses or taps the field; cached results are
+        // reused for 30 s so subsequent taps feel instant.
+        wifiSsid.setOnClickListener(view -> triggerWifiScan(false));
+        wifiSsid.setOnFocusChangeListener((view, has) -> { if (has) triggerWifiScan(false); });
+    }
+
+    /**
+     * Scan the phone's nearby WiFi and populate the SSID dropdown.
+     * If the runtime permission is missing it asks for it first (user can deny —
+     * the field stays free-text). When {@code force} is true, ignore the helper
+     * cache so the result always reflects a fresh scan.
+     */
+    private void triggerWifiScan(boolean force) {
+        if (!WifiScanHelper.hasRequiredPermission(requireContext())) {
+            try {
+                wifiPermLauncher.launch(WifiScanHelper.requiredPermissions());
+            } catch (Exception e) {
+                setWifiStatus("Could not request permission: " + e.getMessage(), true);
+            }
+            return;
+        }
+        if (force) wifiScanHelper.cancel(requireContext());
+        setWifiStatus("Scanning nearby WiFi…", false);
+        wifiScanHelper.scan(requireContext(), (ssids, err) -> {
+            if (!isAdded()) return;
+            if (err != null && !err.isEmpty()) {
+                setWifiStatus("Scan: " + err, true);
+            }
+            if (ssids == null || ssids.isEmpty()) {
+                if (err == null || err.isEmpty()) {
+                    setWifiStatus("No nearby networks found — type the SSID manually",
+                            false);
+                }
+                return;
+            }
+            wifiSsidAdapter.clear();
+            wifiSsidAdapter.addAll(ssids);
+            wifiSsidAdapter.notifyDataSetChanged();
+            wifiSsid.showDropDown();
+            setWifiStatus("Found " + ssids.size() + " nearby network"
+                    + (ssids.size() == 1 ? "" : "s"), false);
+        });
     }
 
     /** GET /api/config and pre-fill the SSID + mode fields. Password is NOT
@@ -230,7 +299,9 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
             int wm = cfg.has("wm") ? cfg.get("wm").getAsInt() : 0;
             String ws = cfg.has("ws") ? cfg.get("ws").getAsString() : "";
             // Don't echo the password back into the UI — see method-level comment.
-            wifiSsid.setText(ws);
+            // setText(s, false) — second arg = filter; we don't want to clamp the
+            // dropdown adapter to only items containing the fetched SSID string.
+            wifiSsid.setText(ws, false);
             wifiPass.setText("");
             if (wm == 1) wifiModeSta.setChecked(true);
             else         wifiModeAp.setChecked(true);
@@ -241,7 +312,8 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
 
     private void onWifiApply() {
         boolean sta = wifiModeSta.isChecked();
-        String ssid = getText(wifiSsid);
+        String ssid = wifiSsid.getText() != null
+                ? wifiSsid.getText().toString().trim() : "";
         String pass = wifiPass.getText() != null ? wifiPass.getText().toString() : "";
         if (sta && ssid.isEmpty()) {
             setWifiStatus("STA mode needs a non-empty SSID", true);
@@ -1276,6 +1348,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
             mqtt.removeDiscoveryListener(cfgDiscoveryListener);
             cfgDiscoveryListener = null;
         }
+        try { wifiScanHelper.cancel(requireContext()); } catch (Exception ignored) {}
         alertHttp.shutdown();
         super.onDestroyView();
     }
