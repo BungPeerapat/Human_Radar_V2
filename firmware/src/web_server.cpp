@@ -326,42 +326,66 @@ void WebRadarServer::handleSaveConfig() {
         return body.substring(start).toInt();
     };
 
-    // Save WiFi
-    uint8_t wm = (uint8_t)getJsonInt("wm", 0);
-    String ws = getJsonStr("ws");
-    String wp = getJsonStr("wp");
-    configManager.setWiFi(wm, ws.c_str(), wp.c_str());
+    // hasKey() — tells the partial-update logic below whether a key was actually
+    // present in the body. Without this guard a POST that only carries WiFi keys
+    // would wipe MQTT credentials (and vice versa) because the missing keys are
+    // indistinguishable from explicit zero/empty values otherwise.
+    auto hasKey = [&](const char* key) -> bool {
+        return body.indexOf(String("\"") + key + "\":") >= 0;
+    };
 
-    // Save MQTT
-    uint8_t me = (uint8_t)getJsonInt("me", 0);
-    uint8_t mr = (uint8_t)getJsonInt("mr", 2);
-    String mh = getJsonStr("mh");
-    int mp = getJsonInt("mp", 1883);
-    String mu = getJsonStr("mu");
-    String mpp = getJsonStr("mpp");
-    configManager.setMQTT(me, mr, mh.c_str(), (uint16_t)mp, mu.c_str(), mpp.c_str());
-
-    // Save device name
-    String dn = getJsonStr("dn");
-    if (dn.length() > 0) {
-        configManager.setDeviceName(dn.c_str());
+    // Save WiFi — only if at least one wifi key is present.
+    if (hasKey("wm") || hasKey("ws") || hasKey("wp")) {
+        const DeviceConfig& cur = configManager.get();
+        uint8_t wm = hasKey("wm") ? (uint8_t)getJsonInt("wm", cur.wifiMode) : cur.wifiMode;
+        String  ws = hasKey("ws") ? getJsonStr("ws") : String(cur.wifiSSID);
+        String  wp = hasKey("wp") ? getJsonStr("wp") : String(cur.wifiPass);
+        configManager.setWiFi(wm, ws.c_str(), wp.c_str());
     }
 
-    // Save sensor config
-    int pi = getJsonInt("pi", -1);
-    if (pi > 0) configManager.setPublishInterval((uint16_t)pi);
+    // Save MQTT — only if at least one mqtt key is present.
+    if (hasKey("me") || hasKey("mr") || hasKey("mh") || hasKey("mp")
+            || hasKey("mu") || hasKey("mpp")) {
+        const DeviceConfig& cur = configManager.get();
+        uint8_t me = hasKey("me") ? (uint8_t)getJsonInt("me", cur.mqttEnabled) : cur.mqttEnabled;
+        uint8_t mr = hasKey("mr") ? (uint8_t)getJsonInt("mr", cur.mqttProto)   : cur.mqttProto;
+        String  mh = hasKey("mh") ? getJsonStr("mh") : String(cur.mqttHost);
+        int     mp = hasKey("mp") ? getJsonInt("mp", cur.mqttPort)             : cur.mqttPort;
+        String  mu = hasKey("mu") ? getJsonStr("mu") : String(cur.mqttUser);
+        String  mpp= hasKey("mpp") ? getJsonStr("mpp") : String(cur.mqttPass);
+        configManager.setMQTT(me, mr, mh.c_str(), (uint16_t)mp, mu.c_str(), mpp.c_str());
+    }
 
-    int ud = getJsonInt("ud", -1);
-    if (ud > 0) configManager.setUnmannedDelay((uint16_t)ud);
+    // Save device name
+    if (hasKey("dn")) {
+        String dn = getJsonStr("dn");
+        if (dn.length() > 0) {
+            configManager.setDeviceName(dn.c_str());
+        }
+    }
 
-    int tt = getJsonInt("tt", -1);
-    if (tt > 0) configManager.setTargetTimeout((uint16_t)tt);
-
-    int mt = getJsonInt("mt", -1);
-    if (mt >= 0) configManager.setMultiTargetMode((uint8_t)mt);
-
-    int sn = getJsonInt("sn", -1);
-    if (sn >= 0) configManager.setSensitivity((uint8_t)sn);
+    // Save sensor config — these guards already existed (-1 sentinel) so they
+    // tolerated partial bodies, but switch to hasKey() for consistency.
+    if (hasKey("pi")) {
+        int pi = getJsonInt("pi", -1);
+        if (pi > 0) configManager.setPublishInterval((uint16_t)pi);
+    }
+    if (hasKey("ud")) {
+        int ud = getJsonInt("ud", -1);
+        if (ud > 0) configManager.setUnmannedDelay((uint16_t)ud);
+    }
+    if (hasKey("tt")) {
+        int tt = getJsonInt("tt", -1);
+        if (tt > 0) configManager.setTargetTimeout((uint16_t)tt);
+    }
+    if (hasKey("mt")) {
+        int mt = getJsonInt("mt", -1);
+        if (mt >= 0) configManager.setMultiTargetMode((uint8_t)mt);
+    }
+    if (hasKey("sn")) {
+        int sn = getJsonInt("sn", -1);
+        if (sn >= 0) configManager.setSensitivity((uint8_t)sn);
+    }
 
     _http.send(200, "application/json", "{\"ok\":true}");
 

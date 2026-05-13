@@ -261,30 +261,98 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private void doWifiApply(String ip, int mode, String ssid, String pass) {
         btnWifiApply.setEnabled(false);
         btnWifiFetch.setEnabled(false);
-        setWifiStatus("Sending WiFi config to " + ip + "…", false);
-        alertHttp.updateWifi(ip, mode, ssid, pass, (ok, err) -> {
+        // Workaround for firmware < v1.0.29: /api/config used to overwrite every
+        // section (MQTT, sensor) even if the body only carried WiFi keys, wiping
+        // unrelated settings. Fetch the current config first and merge the new
+        // WiFi values on top so the POST is byte-for-byte identical to the live
+        // config except for wm/ws/wp.
+        setWifiStatus("Fetching current config to preserve other settings…", false);
+        alertHttp.fetchDeviceConfig(ip, (current, fetchErr) -> {
             if (!isAdded()) return;
-            btnWifiApply.setEnabled(true);
-            btnWifiFetch.setEnabled(true);
-            if (Boolean.TRUE.equals(ok)) {
-                setWifiStatus("WiFi saved · device is rebooting…", false);
-                // Clear the password field after a successful apply so it isn't
-                // left lying around in plain text.
-                wifiPass.setText("");
-                new androidx.appcompat.app.AlertDialog.Builder(requireContext())
-                        .setTitle("WiFi config sent")
-                        .setMessage("The ESP32 is rebooting. If it connects to "
-                                + (mode == 1 ? "\"" + ssid + "\"" : "AP mode")
-                                + " successfully you will see it publish "
-                                + "online + /info via MQTT within ~30 s. If not, "
-                                + "it falls back to AP mode \"HumanRadar\" "
-                                + "(open network) automatically.")
-                        .setPositiveButton("OK", null)
-                        .show();
-            } else {
-                setWifiStatus("Apply failed: " + err, true);
+            if (current == null) {
+                // Fall back to plain WiFi-only POST — newer firmware (v1.0.29+) handles
+                // partial updates correctly so this still works there.
+                android.util.Log.w("ConfigFragment",
+                        "fetchDeviceConfig failed, falling back to partial POST: "
+                        + fetchErr);
+                pushWifiOnly(ip, mode, ssid, pass);
+                return;
             }
+            pushWifiMerged(ip, current, mode, ssid, pass);
         });
+    }
+
+    private void pushWifiMerged(String ip, com.google.gson.JsonObject current,
+                                int mode, String ssid, String pass) {
+        // Build a body with EVERY key the firmware's handleSaveConfig reads,
+        // sourced from `current` except for wm/ws/wp which come from the UI.
+        com.google.gson.JsonObject body = new com.google.gson.JsonObject();
+        body.addProperty("wm", mode);
+        body.addProperty("ws", ssid == null ? "" : ssid);
+        body.addProperty("wp", pass == null ? "" : pass);
+        copyIntIfPresent(current, body, "me");
+        copyIntIfPresent(current, body, "mr");
+        copyStrIfPresent(current, body, "mh");
+        copyIntIfPresent(current, body, "mp");
+        copyStrIfPresent(current, body, "mu");
+        copyStrIfPresent(current, body, "mpp");
+        copyStrIfPresent(current, body, "dn");
+        copyIntIfPresent(current, body, "pi");
+        copyIntIfPresent(current, body, "ud");
+        copyIntIfPresent(current, body, "tt");
+        copyIntIfPresent(current, body, "mt");
+        copyIntIfPresent(current, body, "sn");
+
+        setWifiStatus("Sending merged config to " + ip + "…", false);
+        alertHttp.postRawConfig(ip, body, (ok, err) ->
+                handleWifiApplyResult(ok, err, mode, ssid));
+    }
+
+    private void pushWifiOnly(String ip, int mode, String ssid, String pass) {
+        setWifiStatus("Sending WiFi config to " + ip + "…", false);
+        alertHttp.updateWifi(ip, mode, ssid, pass, (ok, err) ->
+                handleWifiApplyResult(ok, err, mode, ssid));
+    }
+
+    private void handleWifiApplyResult(Boolean ok, String err,
+                                       int mode, String ssid) {
+        if (!isAdded()) return;
+        btnWifiApply.setEnabled(true);
+        btnWifiFetch.setEnabled(true);
+        if (Boolean.TRUE.equals(ok)) {
+            setWifiStatus("WiFi saved · device is rebooting…", false);
+            wifiPass.setText("");
+            new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                    .setTitle("WiFi config sent")
+                    .setMessage("The ESP32 is rebooting. If it connects to "
+                            + (mode == 1 ? "\"" + ssid + "\"" : "AP mode")
+                            + " successfully you will see it publish "
+                            + "online + /info via MQTT within ~30 s. If not, "
+                            + "it falls back to AP mode \"HumanRadar\" "
+                            + "(open network) automatically.")
+                    .setPositiveButton("OK", null)
+                    .show();
+        } else {
+            setWifiStatus("Apply failed: " + err, true);
+        }
+    }
+
+    private static void copyIntIfPresent(com.google.gson.JsonObject src,
+                                         com.google.gson.JsonObject dst,
+                                         String key) {
+        if (src != null && src.has(key) && !src.get(key).isJsonNull()) {
+            try { dst.addProperty(key, src.get(key).getAsInt()); }
+            catch (Exception ignored) {}
+        }
+    }
+
+    private static void copyStrIfPresent(com.google.gson.JsonObject src,
+                                         com.google.gson.JsonObject dst,
+                                         String key) {
+        if (src != null && src.has(key) && !src.get(key).isJsonNull()) {
+            try { dst.addProperty(key, src.get(key).getAsString()); }
+            catch (Exception ignored) {}
+        }
     }
 
     private void setWifiStatus(String text, boolean error) {

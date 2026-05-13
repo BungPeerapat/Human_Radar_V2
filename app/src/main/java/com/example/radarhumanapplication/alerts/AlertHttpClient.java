@@ -135,6 +135,30 @@ public final class AlertHttpClient {
         });
     }
 
+    /**
+     * POST a raw {@code /api/config} body. Used by the WiFi-update flow when
+     * the app wants to send a merged config to firmware < v1.0.29 that
+     * otherwise overwrites every section.
+     */
+    public void postRawConfig(String deviceIp, JsonObject body, Callback<Boolean> cb) {
+        io.execute(() -> {
+            try {
+                httpPost("http://" + deviceIp + "/api/config", body.toString());
+                main.post(() -> cb.onResult(true, null));
+            } catch (Exception e) {
+                // /api/config triggers ESP.restart() — a dropped socket means success.
+                String msg = e.getMessage() == null ? "" : e.getMessage();
+                if (msg.contains("EOF") || msg.contains("reset")
+                        || msg.contains("closed") || msg.contains("aborted")) {
+                    main.post(() -> cb.onResult(true, null));
+                } else {
+                    Log.w(TAG, "postRawConfig failed", e);
+                    main.post(() -> cb.onResult(false, msg));
+                }
+            }
+        });
+    }
+
     /** POST http://{deviceIp}/api/firmware-rollback — boots the previous OTA partition. */
     public void rollbackFirmware(String deviceIp, Callback<Boolean> cb) {
         io.execute(() -> {
