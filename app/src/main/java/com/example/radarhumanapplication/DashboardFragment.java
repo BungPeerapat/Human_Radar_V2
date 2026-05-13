@@ -43,7 +43,8 @@ public class DashboardFragment extends Fragment
         implements MqttService.ConnectionListener,
                    MqttService.TargetListener,
                    MqttService.StatusListener,
-                   MqttService.CmdAckListener {
+                   MqttService.CmdAckListener,
+                   MqttService.DiscoveryListener {
 
     private TextInputEditText etHost, etPort, etDeviceName, etUsername, etPassword;
     private MaterialButton btnConnect;
@@ -56,6 +57,11 @@ public class DashboardFragment extends Fragment
     private MaterialButton btnProfileSave, btnProfileApply, btnProfileDelete;
     private ArrayAdapter<String> profileAdapter;
     private List<ConnectionProfile> profileList = new ArrayList<>();
+
+    // Device Hub UI
+    private RecyclerView rvDeviceHub;
+    private TextView tvDeviceHubCount, tvDeviceHubEmpty;
+    private DeviceHubAdapter deviceHubAdapter;
 
     // Recording UI
     private TextView tvRecStatus;
@@ -111,6 +117,15 @@ public class DashboardFragment extends Fragment
         btnRecordStop = v.findViewById(R.id.btn_record_stop);
         btnReplayOpen = v.findViewById(R.id.btn_replay_open);
 
+        // Device Hub — Multi-device "no thinking" surface.
+        rvDeviceHub      = v.findViewById(R.id.rv_device_hub);
+        tvDeviceHubCount = v.findViewById(R.id.tv_device_hub_count);
+        tvDeviceHubEmpty = v.findViewById(R.id.tv_device_hub_empty);
+        rvDeviceHub.setLayoutManager(new LinearLayoutManager(requireContext()));
+        deviceHubAdapter = new DeviceHubAdapter(requireContext(), this::onDeviceHubTap);
+        rvDeviceHub.setAdapter(deviceHubAdapter);
+        refreshDeviceHub();
+
         loadPrefs();
         updateConnectButton();
         setupProfiles();
@@ -134,6 +149,7 @@ public class DashboardFragment extends Fragment
         mqtt.addTargetListener(this);
         mqtt.addStatusListener(this);
         mqtt.addCmdAckListener(this);
+        mqtt.addDiscoveryListener(this);
 
         // Show existing state
         if (mqtt.isConnected()) {
@@ -150,8 +166,90 @@ public class DashboardFragment extends Fragment
         mqtt.removeTargetListener(this);
         mqtt.removeStatusListener(this);
         mqtt.removeCmdAckListener(this);
+        mqtt.removeDiscoveryListener(this);
         recHandler.removeCallbacks(recTick);
         super.onDestroyView();
+    }
+
+    @Override
+    public void onDeviceDiscovered(String deviceName, String status, long lastSeenMs) {
+        if (!isAdded()) return;
+        refreshDeviceHub();
+        maybeSuggestSwitch();
+    }
+
+    /**
+     * No-think auto-suggest: if MQTT is connected but the configured active
+     * device has been silent for &gt; 8 s while a different device IS publishing
+     * online, surface a Snackbar with a one-tap "SWITCH" action. The user
+     * shouldn't have to detect the mismatch themselves.
+     */
+    private long lastSwitchSuggestionMs = 0;
+    private void maybeSuggestSwitch() {
+        if (!mqtt.isConnected()) return;
+        long now = System.currentTimeMillis();
+        if (now - lastSwitchSuggestionMs < 30_000) return;   // throttle
+
+        String active = mqtt.getDeviceName();
+        if (active == null || active.isEmpty()) return;
+
+        // The active device — is it currently online via /status?
+        MqttService.DiscoveredDevice activeDev = null;
+        MqttService.DiscoveredDevice firstOnlineOther = null;
+        for (MqttService.DiscoveredDevice d : mqtt.getDiscoveredDevices()) {
+            if (d == null) continue;
+            if (active.equals(d.deviceName)) {
+                activeDev = d;
+            } else if (d.isOnline() && firstOnlineOther == null) {
+                firstOnlineOther = d;
+            }
+        }
+        boolean activeSilent = (activeDev == null
+                || !activeDev.isOnline()
+                || (now - activeDev.lastSeenMs) > 8_000);
+        if (activeSilent && firstOnlineOther != null) {
+            lastSwitchSuggestionMs = now;
+            final MqttService.DiscoveredDevice target = firstOnlineOther;
+            View root = getView();
+            if (root == null) return;
+            com.google.android.material.snackbar.Snackbar
+                    .make(root, "\"" + target.deviceName + "\" is online — switch?",
+                            com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
+                    .setAction("SWITCH", v -> onDeviceHubTap(target))
+                    .show();
+        }
+    }
+
+    private void refreshDeviceHub() {
+        if (deviceHubAdapter == null) return;
+        List<MqttService.DiscoveredDevice> snap = mqtt.getDiscoveredDevices();
+        deviceHubAdapter.setEntries(snap, mqtt.getDeviceName());
+        tvDeviceHubCount.setText(String.format(Locale.US, "%d device%s",
+                snap.size(), snap.size() == 1 ? "" : "s"));
+        boolean empty = snap.isEmpty();
+        tvDeviceHubEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
+        rvDeviceHub.setVisibility(empty ? View.GONE : View.VISIBLE);
+    }
+
+    /** Single-tap: make this row the active MQTT subscription target. */
+    private void onDeviceHubTap(MqttService.DiscoveredDevice d) {
+        if (d == null || d.deviceName == null) return;
+        if (d.deviceName.equals(mqtt.getDeviceName())) {
+            Toast.makeText(requireContext(),
+                    "Already active: " + d.deviceName, Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // Mirror the new name into the manual Device Name field so the user
+        // sees what changed, then ask MqttService to re-subscribe.
+        if (etDeviceName != null) etDeviceName.setText(d.deviceName);
+        mqtt.switchActiveDevice(d.deviceName);
+        // Persist for next launch under the same prefs we already use.
+        SharedPreferences sp = requireContext()
+                .getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        sp.edit().putString("device", d.deviceName).apply();
+        Toast.makeText(requireContext(),
+                "Switched to " + d.deviceName, Toast.LENGTH_SHORT).show();
+        refreshDeviceHub();
     }
 
     private void onConnectClick(View v) {
@@ -240,6 +338,9 @@ public class DashboardFragment extends Fragment
         tvDeviceStatus.setText(status);
         tvDeviceStatus.setTextColor("online".equals(status) ?
                 getColor(R.color.radar_green) : getColor(R.color.radar_red));
+        // Active device may have just changed, or a status flipped — refresh
+        // the hub so the row's dot and ACTIVE badge stay accurate.
+        refreshDeviceHub();
     }
 
     @Override

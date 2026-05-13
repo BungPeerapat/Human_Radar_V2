@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="10dp"
+    android:background="?attr/selectableItemBackground"
+    android:focusable="true"
+    android:clickable="true">
+
+    <TextView
+        android:id="@+id/dh_dot"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="●"
+        android:textSize="16sp"
+        android:textColor="@color/radar_green"
+        android:layout_marginEnd="10dp"
+        android:fontFamily="monospace" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_weight="1"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/dh_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="HumanRadar"
+            android:textColor="@color/white"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:singleLine="true"
+            android:ellipsize="middle" />
+
+        <TextView
+            android:id="@+id/dh_detail"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="192.168.1.42  ·  v1.0.30  ·  just now"
+            android:textColor="@color/radar_text_dim"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:singleLine="true"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/dh_active_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="ACTIVE"
+        android:textColor="@color/radar_green"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:background="@color/radar_input_bg"
+        android:paddingHorizontal="6dp"
+        android:paddingVertical="2dp"
+        android:visibility="gone" />
+</LinearLayout>

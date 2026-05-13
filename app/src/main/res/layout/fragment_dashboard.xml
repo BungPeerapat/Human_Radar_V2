@@ -10,6 +10,66 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
+        <!-- Device Hub Card — every ESP32 the app has seen on the broker. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/radar_card"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="6dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="Devices on broker"
+                    android:textColor="@color/radar_blue"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/tv_device_hub_count"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="0"
+                    android:textColor="@color/radar_text_dim"
+                    android:textSize="12sp"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Tap a device to make it the active one. New devices show up here automatically."
+                android:textColor="@color/radar_text_dim"
+                android:textSize="11sp"
+                android:layout_marginBottom="8dp" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rv_device_hub"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content" />
+
+            <TextView
+                android:id="@+id/tv_device_hub_empty"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="No devices discovered yet. Connect MQTT to start auto-discovery."
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:gravity="center"
+                android:padding="14dp"
+                android:visibility="gone" />
+        </LinearLayout>
+
         <!-- Profiles Card -->
         <LinearLayout
             android:layout_width="match_parent"

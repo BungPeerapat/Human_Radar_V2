@@ -182,6 +182,66 @@ public class MqttService {
         this.password = pass;
     }
 
+    /**
+     * "One-tap switch active device" — change which ESP32 the per-device topic
+     * subscriptions point at, without making the user open a config screen.
+     * Disconnects and reconnects against the same broker with the new name so
+     * the {@code humanradar/<name>/...} subscriptions refresh. Also syncs the
+     * active {@link ConnectionProfile} so the choice persists across launches.
+     */
+    public void switchActiveDevice(String newDeviceName) {
+        if (newDeviceName == null) return;
+        String trimmed = newDeviceName.trim();
+        if (trimmed.isEmpty() || trimmed.equals(deviceName)) return;
+        Log.i(TAG, "Switching active device: " + deviceName + " -> " + trimmed);
+        this.deviceName = trimmed;
+        this.deviceStatus = "unknown";
+        syncActiveProfile(trimmed);
+        // Notify status subscribers so the UI flips to "unknown" / "DEVICE OFFLINE"
+        // immediately while we wait for the new /status retained message.
+        mainHandler.post(() -> {
+            for (StatusListener l : statusListeners) {
+                try { l.onDeviceStatus("unknown"); } catch (Exception ignored) {}
+            }
+        });
+        if (connected && client != null) {
+            disconnect();
+            mainHandler.postDelayed(this::connect, 400);
+        }
+    }
+
+    /** Update the {@link ProfileManager} active profile to match the new device. */
+    private void syncActiveProfile(String newDeviceName) {
+        try {
+            com.example.radarhumanapplication.profiles.ProfileManager pm =
+                    com.example.radarhumanapplication.profiles.ProfileManager.getInstance();
+            for (com.example.radarhumanapplication.profiles.ConnectionProfile p
+                    : pm.getProfiles()) {
+                if (p == null) continue;
+                if (newDeviceName.equals(p.deviceName)
+                        && brokerHost != null && brokerHost.equals(p.brokerHost)) {
+                    pm.setActive(p.id);
+                    return;
+                }
+            }
+            // No saved profile for this (broker, name) combo — drop in a transient
+            // one carrying the live MQTT discovery IP so the device picker shows
+            // it the next time the user opens it.
+            String ip = "";
+            DiscoveredDevice d = discoveredDevices.get(newDeviceName);
+            if (d != null && d.ip != null) ip = d.ip;
+            com.example.radarhumanapplication.profiles.ConnectionProfile np =
+                    com.example.radarhumanapplication.profiles.ConnectionProfile.create(
+                            newDeviceName, brokerHost, brokerPort,
+                            newDeviceName, username, password);
+            np.espHttpIp = ip;
+            pm.addProfile(np);
+            pm.setActive(np.id);
+        } catch (Exception e) {
+            Log.w(TAG, "syncActiveProfile failed", e);
+        }
+    }
+
     /** Bind a long-lived Context (typically the Application) so MQTT can start the foreground
      *  service that keeps it alive in background. Safe to call repeatedly. */
     public void attachContext(Context ctx) {
