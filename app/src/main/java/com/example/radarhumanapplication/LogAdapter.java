@@ -12,9 +12,18 @@ import androidx.recyclerview.widget.RecyclerView;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * RecyclerView adapter for ESP32 log entries with optional device-name filter.
+ * Mirrors the EventAdapter filter shape so the Logs tab has consistent UX.
+ */
 public class LogAdapter extends RecyclerView.Adapter<LogAdapter.ViewHolder> {
 
+    /** Full backing set (every log we've received). */
+    private final List<MqttService.LogEntry> all = new ArrayList<>();
+    /** Filtered view the RecyclerView actually renders. */
     private final List<MqttService.LogEntry> entries = new ArrayList<>();
+    /** "" = show every device. */
+    private String deviceFilter = "";
     private final Context context;
 
     public LogAdapter(Context context) {
@@ -22,18 +31,41 @@ public class LogAdapter extends RecyclerView.Adapter<LogAdapter.ViewHolder> {
     }
 
     public void addEntry(MqttService.LogEntry entry) {
-        entries.add(entry);
-        notifyItemInserted(entries.size() - 1);
+        all.add(entry);
+        if (matches(entry)) {
+            entries.add(entry);
+            notifyItemInserted(entries.size() - 1);
+        }
     }
 
     public void setEntries(List<MqttService.LogEntry> newEntries) {
-        entries.clear();
-        entries.addAll(newEntries);
-        notifyDataSetChanged();
+        all.clear();
+        if (newEntries != null) all.addAll(newEntries);
+        rebuildFiltered();
     }
 
     public void clear() {
+        int n = entries.size();
+        all.clear();
         entries.clear();
+        notifyItemRangeRemoved(0, n);
+    }
+
+    /** {@code ""} = no filter (show everything). */
+    public void setDeviceFilter(String deviceName) {
+        this.deviceFilter = deviceName == null ? "" : deviceName;
+        rebuildFiltered();
+    }
+
+    private boolean matches(MqttService.LogEntry e) {
+        if (e == null) return false;
+        if (deviceFilter.isEmpty()) return true;
+        return deviceFilter.equals(e.device);
+    }
+
+    private void rebuildFiltered() {
+        entries.clear();
+        for (MqttService.LogEntry e : all) if (matches(e)) entries.add(e);
         notifyDataSetChanged();
     }
 
@@ -53,7 +85,14 @@ public class LogAdapter extends RecyclerView.Adapter<LogAdapter.ViewHolder> {
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         MqttService.LogEntry entry = entries.get(position);
         holder.tvLevel.setText(entry.level);
-        holder.tvTag.setText(entry.tag);
+        // When no filter is active, prefix the tag with the device name so the
+        // user can tell rows apart at a glance. When a filter IS active, all
+        // rows are from the same device — no need to repeat it.
+        String tag = entry.tag == null ? "" : entry.tag;
+        if (deviceFilter.isEmpty() && entry.device != null && !entry.device.isEmpty()) {
+            tag = entry.device + "·" + tag;
+        }
+        holder.tvTag.setText(tag);
         holder.tvMsg.setText(entry.message);
 
         int levelColor;

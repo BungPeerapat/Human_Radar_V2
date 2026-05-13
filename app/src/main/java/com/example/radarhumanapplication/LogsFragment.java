@@ -36,6 +36,12 @@ public class LogsFragment extends Fragment
     private EventLogger eventLogger;
     private View eventFilterBar;
     private EditText etEventSearch;
+    private View logFilterBar;
+    private com.google.android.material.textfield.MaterialAutoCompleteTextView acLogDevice;
+    private android.widget.ArrayAdapter<String> logDeviceAdapter;
+    private MqttService.DiscoveryListener logDiscoveryListener;
+    /** Sentinel label that maps back to "" (no filter). */
+    private static final String LOG_DEVICE_ALL = "(all devices)";
 
     @Nullable
     @Override
@@ -62,6 +68,8 @@ public class LogsFragment extends Fragment
         MaterialButton btnTabEvents = v.findViewById(R.id.btn_tab_events);
         eventFilterBar = v.findViewById(R.id.event_filter_bar);
         etEventSearch  = v.findViewById(R.id.et_event_search);
+        logFilterBar   = v.findViewById(R.id.log_filter_bar);
+        acLogDevice    = v.findViewById(R.id.ac_log_device);
         MaterialButtonToggleGroup tgEventType = v.findViewById(R.id.tg_event_type);
         MaterialButton btnEventAll   = v.findViewById(R.id.btn_event_all);
         MaterialButton btnEventEnter = v.findViewById(R.id.btn_event_enter);
@@ -114,6 +122,30 @@ public class LogsFragment extends Fragment
         mqtt.addLogListener(this);
         eventLogger.addEventListener(this);
 
+        // ── Log device filter ────────────────────────────────────────────
+        logDeviceAdapter = new android.widget.ArrayAdapter<>(
+                requireContext(),
+                android.R.layout.simple_list_item_1,
+                buildLogDeviceOptions());
+        acLogDevice.setAdapter(logDeviceAdapter);
+        acLogDevice.setText(LOG_DEVICE_ALL, false);
+        acLogDevice.setOnClickListener(view -> acLogDevice.showDropDown());
+        acLogDevice.setOnItemClickListener((parent, view, pos, id) -> {
+            String picked = parent.getItemAtPosition(pos).toString();
+            String filter = LOG_DEVICE_ALL.equals(picked) ? "" : picked;
+            adapter.setDeviceFilter(filter);
+            updateCount();
+        });
+        // Refresh option list whenever a new device gets discovered.
+        logDiscoveryListener = (name, status, lastSeenMs) -> {
+            if (!isAdded() || logDeviceAdapter == null) return;
+            java.util.List<String> snap = buildLogDeviceOptions();
+            logDeviceAdapter.clear();
+            logDeviceAdapter.addAll(snap);
+            logDeviceAdapter.notifyDataSetChanged();
+        };
+        mqtt.addDiscoveryListener(logDiscoveryListener);
+
         // ── Event filter bar (Zone C) ────────────────────────────────────
         etEventSearch.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
@@ -139,6 +171,7 @@ public class LogsFragment extends Fragment
         rvLogs.setVisibility(View.VISIBLE);
         rvEvents.setVisibility(View.GONE);
         if (eventFilterBar != null) eventFilterBar.setVisibility(View.GONE);
+        if (logFilterBar != null) logFilterBar.setVisibility(View.VISIBLE);
         updateCount();
     }
 
@@ -146,13 +179,37 @@ public class LogsFragment extends Fragment
         rvLogs.setVisibility(View.GONE);
         rvEvents.setVisibility(View.VISIBLE);
         if (eventFilterBar != null) eventFilterBar.setVisibility(View.VISIBLE);
+        if (logFilterBar != null) logFilterBar.setVisibility(View.GONE);
         updateCount();
+    }
+
+    /** "(all devices)" + every unique device name we've seen via discovery
+     *  OR an existing log entry (covers older devices that haven't published
+     *  /info yet but did publish a /log message before). */
+    private java.util.List<String> buildLogDeviceOptions() {
+        java.util.TreeSet<String> seen = new java.util.TreeSet<>();
+        for (MqttService.DiscoveredDevice d : mqtt.getDiscoveredDevices()) {
+            if (d != null && d.deviceName != null && !d.deviceName.isEmpty()) {
+                seen.add(d.deviceName);
+            }
+        }
+        for (MqttService.LogEntry e : mqtt.getLogBuffer()) {
+            if (e != null && e.device != null && !e.device.isEmpty()) seen.add(e.device);
+        }
+        java.util.List<String> out = new java.util.ArrayList<>();
+        out.add(LOG_DEVICE_ALL);
+        out.addAll(seen);
+        return out;
     }
 
     @Override
     public void onDestroyView() {
         mqtt.removeLogListener(this);
         eventLogger.removeEventListener(this);
+        if (logDiscoveryListener != null) {
+            mqtt.removeDiscoveryListener(logDiscoveryListener);
+            logDiscoveryListener = null;
+        }
         super.onDestroyView();
     }
 

@@ -426,9 +426,13 @@ public class MqttService {
 
         subscribe(topic("targets"), this::handleTargets);
         subscribe(topic("status"), this::handleStatus);
-        subscribe(topic("log"), this::handleLog);
         subscribe(topic("config/ack"), this::handleConfigAck);
         subscribe(topic("cmd/ack"), this::handleCmdAck);
+        // Logs subscribe to the wildcard so the Logs tab can filter by device
+        // without forcing a reconnect each time the user switches view.
+        // handleLog extracts the device name from the topic and tags the
+        // resulting LogEntry so listeners can route correctly.
+        subscribe("humanradar/+/log", this::handleLog);
 
         // Wildcard discovery — picks up every ESP32 that publishes humanradar/<name>/status
         // on the same broker. Used by the device picker to show what's actually online.
@@ -570,13 +574,18 @@ public class MqttService {
         try {
             String json = new String(publish.getPayloadAsBytes(), StandardCharsets.UTF_8);
             JsonObject obj = gson.fromJson(json, JsonObject.class);
+            // Wildcard subscription (humanradar/+/log) carries logs from every
+            // device. Pull the source name out of the topic so the Logs tab
+            // can group / filter without re-parsing.
+            String src = extractDeviceFromTopic(publish.getTopic().toString());
             LogEntry entry = new LogEntry(
                     obj.has("ts") ? obj.get("ts").getAsLong() : 0,
                     obj.has("lvl") ? obj.get("lvl").getAsString() : "?",
                     obj.has("tag") ? obj.get("tag").getAsString() : "",
                     obj.has("msg") ? obj.get("msg").getAsString() : "",
                     obj.has("heap") ? obj.get("heap").getAsLong() : 0,
-                    obj.has("up") ? obj.get("up").getAsLong() : 0
+                    obj.has("up") ? obj.get("up").getAsLong() : 0,
+                    src
             );
             logBuffer.add(entry);
             while (logBuffer.size() > MAX_LOG_ENTRIES) {
@@ -663,14 +672,24 @@ public class MqttService {
         public final String message;
         public final long freeHeap;
         public final long uptime;
+        /** Source device name extracted from the MQTT topic. "" for legacy
+         *  entries created before multi-device log support. */
+        public final String device;
 
-        public LogEntry(long timestamp, String level, String tag, String message, long freeHeap, long uptime) {
+        public LogEntry(long timestamp, String level, String tag, String message,
+                        long freeHeap, long uptime) {
+            this(timestamp, level, tag, message, freeHeap, uptime, "");
+        }
+
+        public LogEntry(long timestamp, String level, String tag, String message,
+                        long freeHeap, long uptime, String device) {
             this.timestamp = timestamp;
             this.level = level;
             this.tag = tag;
             this.message = message;
             this.freeHeap = freeHeap;
             this.uptime = uptime;
+            this.device = device == null ? "" : device;
         }
     }
 }
