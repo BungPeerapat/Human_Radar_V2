@@ -20,6 +20,9 @@
             android:padding="16dp"
             android:layout_marginBottom="12dp">
 
+            <!-- Row 1: title + device count + transport badge + ⚙ settings.
+                 Informational only — never overflows because the title is
+                 the only flex element. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -34,7 +37,9 @@
                     android:text="Devices on broker"
                     android:textColor="@color/radar_blue"
                     android:textSize="14sp"
-                    android:textStyle="bold" />
+                    android:textStyle="bold"
+                    android:singleLine="true"
+                    android:ellipsize="end" />
 
                 <TextView
                     android:id="@+id/tv_device_hub_count"
@@ -44,7 +49,7 @@
                     android:textColor="@color/radar_text_dim"
                     android:textSize="12sp"
                     android:fontFamily="monospace"
-                    android:layout_marginEnd="8dp" />
+                    android:layout_marginEnd="6dp" />
 
                 <TextView
                     android:id="@+id/tv_transport_badge"
@@ -73,21 +78,31 @@
                     android:paddingHorizontal="8dp"
                     android:minWidth="32dp"
                     android:minHeight="32dp"
-                    android:layout_marginEnd="4dp"
                     android:contentDescription="Transport settings" />
+            </LinearLayout>
+
+            <!-- Row 2: hub action buttons. Equal weight so each gets ½ the
+                 row regardless of label length — fixes Purge being clipped
+                 on narrow screens. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_health_check_all"
                     style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
                     android:layout_height="wrap_content"
                     android:text="Check All"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
                     android:paddingHorizontal="10dp"
-                    android:layout_marginEnd="4dp"
-                    android:minHeight="32dp"
+                    android:layout_marginEnd="6dp"
+                    android:minHeight="36dp"
                     app:icon="@android:drawable/ic_menu_recent_history"
                     app:iconSize="14dp"
                     app:iconPadding="4dp" />
@@ -95,14 +110,15 @@
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_purge_offline"
                     style="?attr/materialButtonOutlinedStyle"
-                    android:layout_width="wrap_content"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
                     android:layout_height="wrap_content"
                     android:text="Purge"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
                     android:paddingHorizontal="10dp"
-                    android:minHeight="32dp"
+                    android:minHeight="36dp"
                     app:icon="@android:drawable/ic_menu_delete"
                     app:iconSize="14dp"
                     app:iconPadding="4dp" />
