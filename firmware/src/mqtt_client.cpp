@@ -1,6 +1,7 @@
 #include "mqtt_client.h"
 #include "logger.h"
 #include "power_monitor.h"
+#include "alert_pattern.h"
 
 MqttRadarClient mqttClient;
 
@@ -434,6 +435,21 @@ void MqttRadarClient::handleCommand(const uint8_t* payload, unsigned int length)
         cmdSetLogLevel(requestId, level);
     } else if (strcmp(cmd, "health") == 0) {
         cmdHealth(requestId);
+    } else if (strcmp(cmd, "alert_test") == 0) {
+        // Buzzer / LED test via MQTT — works even when the phone isn't
+        // on the same LAN as the ESP32. Mirrors POST /api/alert/test.
+        int count    = doc["count"] | 2;
+        bool useLong = (doc["long"] | 0) != 0;
+        if (count < 0) count = 0;
+        if (count > 10) count = 10;
+        alertPattern.triggerTest((uint8_t)count, useLong);
+        char ack[192];
+        snprintf(ack, sizeof(ack),
+            "{\"request_id\":\"%s\",\"status\":\"ok\",\"cmd\":\"alert_test\","
+            "\"count\":%d,\"long\":%d}",
+            requestId, count, useLong ? 1 : 0);
+        _mqtt.publish(_topicCmdAck, ack);
+        Log::info(TAG_MQTT, "CMD: alert_test count=%d long=%d", count, useLong ? 1 : 0);
     } else {
         Log::warn(TAG_MQTT, "Unknown command: %s", cmd);
         // Publish error ACK

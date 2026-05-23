@@ -464,9 +464,12 @@ public class MqttService {
                     .automaticReconnectWithDefaultConfig()
                     .addDisconnectedListener(ctx -> {
                         connected = false;
+                        String reason = ctx.getCause() != null
+                                ? ctx.getCause().getMessage() : "unknown";
+                        injectAppLog("WARN", "MQTT", "Disconnected: " + reason);
                         mainHandler.post(() -> {
                             for (ConnectionListener l : connectionListeners) {
-                                l.onDisconnected(ctx.getCause().getMessage());
+                                l.onDisconnected(reason);
                             }
                         });
                     });
@@ -496,6 +499,9 @@ public class MqttService {
                         } else {
                             connected = true;
                             Log.i(TAG, "Connected to " + brokerHost);
+                            injectAppLog("INFO", "MQTT",
+                                    "Connected to " + brokerHost + ":" + brokerPort
+                                            + " as '" + deviceName + "'");
                             subscribeAll();
                             mainHandler.post(() -> {
                                 for (ConnectionListener l : connectionListeners) {
@@ -824,15 +830,25 @@ public class MqttService {
      * is empty.
      */
     public void sendCommandTo(String deviceName, String cmd) {
+        sendCommandToWithExtras(deviceName, cmd, null);
+    }
+
+    /** Targeted command with extra fields merged into the payload alongside
+     *  {@code request_id} and {@code cmd}. Used by alert_test ({@code count},
+     *  {@code long}) and any future cmd that needs parameters. */
+    public void sendCommandToWithExtras(String deviceName, String cmd, JsonObject extras) {
         if (!connected || client == null) return;
         if (deviceName == null || deviceName.isEmpty()) {
-            sendCommand(cmd);
+            sendCommand(cmd, extras);
             return;
         }
         JsonObject payload = new JsonObject();
         payload.addProperty("request_id",
                 UUID.randomUUID().toString().substring(0, 8));
         payload.addProperty("cmd", cmd);
+        if (extras != null) {
+            for (String key : extras.keySet()) payload.add(key, extras.get(key));
+        }
         publish("humanradar/" + deviceName + "/cmd", payload.toString());
     }
 
@@ -861,6 +877,33 @@ public class MqttService {
 
     public void clearLogBuffer() {
         logBuffer.clear();
+    }
+
+    /**
+     * Synthesize an app-side log entry so transport / OTA / discovery
+     * events appear in the same buffer as ESP32-originated entries. Tagged
+     * with device="(app)" so the device filter can isolate them.
+     *
+     * @param level "INFO" / "WARN" / "ERROR" / "DEBUG"
+     * @param tag   short scope label (e.g. "OTA", "TRANSPORT", "MQTT")
+     * @param msg   human-readable message
+     */
+    public void injectAppLog(String level, String tag, String msg) {
+        LogEntry entry = new LogEntry(
+                System.currentTimeMillis(),
+                level == null ? "INFO" : level,
+                tag == null ? "APP" : tag,
+                msg == null ? "" : msg,
+                0L, 0L, "(app)");
+        logBuffer.add(entry);
+        while (logBuffer.size() > MAX_LOG_ENTRIES) {
+            logBuffer.remove(0);
+        }
+        mainHandler.post(() -> {
+            for (LogListener l : logListeners) {
+                try { l.onLogReceived(entry); } catch (Exception ignored) {}
+            }
+        });
     }
 
     // --- Log Entry data class ---

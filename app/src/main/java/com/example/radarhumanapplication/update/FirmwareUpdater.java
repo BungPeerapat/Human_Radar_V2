@@ -238,16 +238,27 @@ public final class FirmwareUpdater {
         main.post(() -> cb.onProgress(0, "Uploading to ESP32"));
         android.net.Uri binUri = android.net.Uri.fromFile(binFile);
         long sizeBytes = binFile.length();
+        com.example.radarhumanapplication.MqttService.getInstance().injectAppLog(
+                "INFO", "OTA",
+                "Uploading " + manifest.versionName + " (" + sizeBytes
+                        + " B) to " + deviceIp);
         uploader.start(deviceIp, binUri, sizeBytes, new FirmwareUploader.Callback() {
             @Override public void onProgress(int percent) {
                 main.post(() -> cb.onProgress(percent, "Uploading to ESP32"));
             }
             @Override public void onCompleted() {
                 safeDelete(binFile);
+                com.example.radarhumanapplication.MqttService.getInstance().injectAppLog(
+                        "INFO", "OTA",
+                        "Upload to " + deviceIp + " accepted, waiting for "
+                                + "device to reboot…");
                 main.post(cb::onUploaded);
             }
             @Override public void onError(String message) {
                 safeDelete(binFile);
+                com.example.radarhumanapplication.MqttService.getInstance().injectAppLog(
+                        "ERROR", "OTA",
+                        "Upload to " + deviceIp + " failed: " + message);
                 main.post(() -> cb.onError(message));
             }
         });
@@ -265,12 +276,30 @@ public final class FirmwareUpdater {
      */
     public void verifyOnMqtt(String expectedDeviceName, String expectedVersion,
                              long timeoutMs, InstallCallback cb) {
+        verifyOnMqtt(expectedDeviceName, expectedVersion, /*deviceIpHint=*/ null,
+                timeoutMs, cb);
+    }
+
+    /**
+     * Same as the 4-arg overload, but also HTTP-polls {@code /api/version}
+     * on {@code deviceIpHint} in parallel. Whichever signal arrives first —
+     * MQTT /info or a successful HTTP GET — wins. This stops the dialog
+     * from sitting on "Timeout" when the broker is unreachable but the
+     * device IS back on LAN.
+     */
+    public void verifyOnMqtt(String expectedDeviceName, String expectedVersion,
+                             String deviceIpHint, long timeoutMs,
+                             InstallCallback cb) {
         if (expectedDeviceName == null || expectedDeviceName.isEmpty()) {
             main.post(() -> cb.onError("Cannot verify — device name unknown"));
             return;
         }
         final com.example.radarhumanapplication.MqttService mqtt =
                 com.example.radarhumanapplication.MqttService.getInstance();
+        mqtt.injectAppLog("INFO", "OTA",
+                "Verifying " + expectedDeviceName + " came back with fw="
+                        + expectedVersion + " (timeout " + (timeoutMs / 1000) + "s)"
+                        + (deviceIpHint == null ? "" : ", HTTP poll " + deviceIpHint));
         final long startedAt = System.currentTimeMillis();
 
         // Already on the new version? (Rare but possible if /info beat the OTA
@@ -313,10 +342,82 @@ public final class FirmwareUpdater {
             String fw  = d != null ? d.fw  : (expectedVersion == null ? "" : expectedVersion);
             String ip  = d != null ? d.ip  : "";
             String mac = d != null ? d.mac : "";
+            mqtt.injectAppLog("INFO", "OTA",
+                    "✓ " + deviceName + " came back on MQTT with fw=" + fw
+                            + " (expected " + expectedVersion + ")");
             main.post(() -> cb.onInstalled(new MqttVerifyResult(
                     deviceName, fw, ip, mac, true)));
         };
         mqtt.addDiscoveryListener(holder[0]);
+
+        // Optional HTTP poll — runs every 4s against the device's IP. First
+        // 200 OK with fw matching expectedVersion wins, even if MQTT /info
+        // never arrives. This is the "Timeout" escape hatch.
+        final java.util.concurrent.atomic.AtomicReference<Runnable> pollHolder =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        if (deviceIpHint != null && !deviceIpHint.isEmpty()) {
+            pollHolder.set(new Runnable() {
+                int attempt = 0;
+                @Override public void run() {
+                    if (settled[0]) return;
+                    attempt++;
+                    io.execute(() -> {
+                        if (settled[0]) return;
+                        String fw = "";
+                        String err = null;
+                        try {
+                            String body = httpGet("http://" + deviceIpHint
+                                    + "/api/version");
+                            com.google.gson.JsonObject o = com.google.gson.JsonParser
+                                    .parseString(body).getAsJsonObject();
+                            if (o.has("fw")) fw = o.get("fw").getAsString();
+                        } catch (Exception e) {
+                            err = e.getMessage();
+                        }
+                        final String fwFinal = fw;
+                        final String errFinal = err;
+                        main.post(() -> {
+                            if (settled[0]) return;
+                            if (!fwFinal.isEmpty()) {
+                                boolean match = expectedVersion == null
+                                        || expectedVersion.isEmpty()
+                                        || expectedVersion.equals(fwFinal);
+                                mqtt.injectAppLog(match ? "INFO" : "WARN", "OTA",
+                                        "HTTP poll #" + attempt + " "
+                                                + deviceIpHint + " → fw=" + fwFinal
+                                                + (match ? " ✓ match"
+                                                         : " (expected " + expectedVersion + ")"));
+                                if (match) {
+                                    synchronized (holder) {
+                                        if (settled[0]) return;
+                                        settled[0] = true;
+                                    }
+                                    mqtt.removeDiscoveryListener(holder[0]);
+                                    if (timeoutHolder[0] != null)
+                                        main.removeCallbacks(timeoutHolder[0]);
+                                    cb.onInstalled(new MqttVerifyResult(
+                                            expectedDeviceName, fwFinal,
+                                            deviceIpHint, "", true));
+                                    return;
+                                }
+                            } else if (errFinal != null && attempt == 1) {
+                                // Only log the first failure to avoid noise.
+                                mqtt.injectAppLog("DEBUG", "OTA",
+                                        "HTTP poll #" + attempt + " "
+                                                + deviceIpHint + " → " + errFinal);
+                            }
+                            // Schedule next attempt.
+                            if (!settled[0]) {
+                                main.postDelayed(pollHolder.get(), 4_000);
+                            }
+                        });
+                    });
+                }
+            });
+            // First attempt fires 3s after upload completes — gives the chip
+            // time to finish writing flash + reboot before we hammer it.
+            main.postDelayed(pollHolder.get(), 3_000);
+        }
 
         timeoutHolder[0] = () -> {
             synchronized (holder) {
@@ -324,8 +425,30 @@ public final class FirmwareUpdater {
                 settled[0] = true;
             }
             mqtt.removeDiscoveryListener(holder[0]);
-            main.post(() -> cb.onError("Device did not announce on MQTT within "
-                    + (timeoutMs / 1000) + "s — check power / WiFi"));
+            // Surface what we DID see during the timeout window so the user
+            // doesn't have to guess. Common pattern: device came back but
+            // with the OLD fw — that means OTA silently failed and the chip
+            // booted from the previous partition.
+            com.example.radarhumanapplication.MqttService.DiscoveredDevice cur =
+                    findDevice(mqtt, expectedDeviceName);
+            String detail;
+            if (cur == null) {
+                detail = "no /info from broker — broker unreachable, "
+                        + "device's WiFi credentials wrong, or device powered off";
+            } else if (cur.fw == null || cur.fw.isEmpty()) {
+                detail = "device on broker but no fw published yet — try again "
+                        + "or check Logs tab for ESP boot messages";
+            } else if (expectedVersion != null && !expectedVersion.equals(cur.fw)) {
+                detail = "device came back with fw=" + cur.fw + " (expected v"
+                        + expectedVersion + ") — OTA likely rejected, "
+                        + "chip rolled back to previous partition";
+            } else {
+                detail = "device reachable but verification race — should be fine";
+            }
+            mqtt.injectAppLog("WARN", "OTA",
+                    "Verify timeout after " + (timeoutMs / 1000) + "s: " + detail);
+            main.post(() -> cb.onError("Timeout after " + (timeoutMs / 1000)
+                    + "s — " + detail));
         };
         main.postDelayed(timeoutHolder[0], timeoutMs);
     }

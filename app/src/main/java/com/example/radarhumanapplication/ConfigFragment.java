@@ -807,9 +807,14 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                         if (expectedName == null || expectedName.isEmpty()) {
                             expectedName = label;
                         }
+                        // Pass the device IP we just uploaded to — verify
+                        // will HTTP-poll /api/version in parallel with the
+                        // MQTT /info wait so a stuck broker doesn't strand
+                        // the user on "Timeout".
                         updater.verifyOnMqtt(
                                 expectedName,
                                 manifest.versionName,
+                                ip,
                                 com.example.radarhumanapplication.update.FirmwareUpdater
                                         .DEFAULT_MQTT_VERIFY_TIMEOUT_MS,
                                 this);
@@ -1275,8 +1280,38 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         setAlertStatus("Triggering ESP32 (" + label + ") at " + ip + "...", false);
         alertHttp.testBeep(ip, 2, false, (ok, err) -> {
             if (!isAdded()) return;
-            if (Boolean.TRUE.equals(ok)) setAlertStatus("ESP32 test sent to " + ip, false);
-            else setAlertStatus("ESP32 test failed: " + err, true);
+            if (Boolean.TRUE.equals(ok)) {
+                setAlertStatus("ESP32 test sent via HTTP to " + ip, false);
+                return;
+            }
+            // HTTP failed — common when phone is on a different LAN than the
+            // ESP32 (hotspot, different SSID, etc.). Fall back to MQTT cmd
+            // alert_test which works as long as both can reach the broker.
+            android.util.Log.w("ConfigFragment",
+                    "HTTP alert_test failed (" + err + "), trying MQTT");
+            if (!mqtt.isConnected()) {
+                setAlertStatus("ESP32 test failed: " + err
+                        + " (MQTT also offline)", true);
+                return;
+            }
+            String targetName = (label == null || label.isEmpty()
+                    || "(manual)".equals(label))
+                    ? mqtt.getDeviceName() : label;
+            if (targetName == null || targetName.isEmpty()) {
+                setAlertStatus("ESP32 test failed: " + err
+                        + " (no device name for MQTT fallback)", true);
+                return;
+            }
+            com.google.gson.JsonObject extras = new com.google.gson.JsonObject();
+            extras.addProperty("count", 2);
+            extras.addProperty("long",  0);
+            // sendCommandTo wraps the payload as {request_id, cmd, ...extras}
+            // and publishes to humanradar/<name>/cmd — ESP32 fw ≥ v1.0.44 maps
+            // 'alert_test' to alertPattern.triggerTest(count, long).
+            mqtt.sendCommandToWithExtras(targetName, "alert_test", extras);
+            setAlertStatus("HTTP unreachable — sent alert_test via MQTT to "
+                    + targetName + " (needs firmware ≥ v1.0.44)", false);
+            return;
         });
     }
 

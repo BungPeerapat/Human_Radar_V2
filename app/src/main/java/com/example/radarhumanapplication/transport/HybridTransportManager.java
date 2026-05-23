@@ -301,8 +301,15 @@ public final class HybridTransportManager
 
     private synchronized void setLane(String name, TransportLane lane) {
         TransportLane prev = laneByDevice.put(name, lane);
-        if (prev != lane && settings.isVerboseLog()) {
-            Log.i(TAG, "Lane " + name + ": " + prev + " -> " + lane);
+        if (prev != lane) {
+            if (settings.isVerboseLog()) {
+                Log.i(TAG, "Lane " + name + ": " + prev + " -> " + lane);
+            }
+            // Always surface lane flips in the in-app log buffer — they're
+            // the main thing developers want to see when triaging "why is
+            // my radar feed coming via cloud instead of LAN?".
+            mqtt.injectAppLog("INFO", "TRANSPORT",
+                    name + ": " + prev + " → " + lane);
         }
     }
 

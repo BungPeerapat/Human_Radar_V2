@@ -62,6 +62,8 @@ public class LogsFragment extends Fragment
         swAutoScroll = v.findViewById(R.id.sw_auto_scroll);
         tvLogCount = v.findViewById(R.id.tv_log_count);
         MaterialButton btnFetch = v.findViewById(R.id.btn_fetch_logs);
+        MaterialButton btnCopy  = v.findViewById(R.id.btn_copy_logs);
+        MaterialButton btnShare = v.findViewById(R.id.btn_share_logs);
         MaterialButton btnClear = v.findViewById(R.id.btn_clear_logs);
         MaterialButtonToggleGroup tgMode = v.findViewById(R.id.tg_log_mode);
         MaterialButton btnTabEsp = v.findViewById(R.id.btn_tab_esp_logs);
@@ -117,6 +119,40 @@ public class LogsFragment extends Fragment
                 mqtt.clearLogBuffer();
             }
             updateCount();
+        });
+
+        btnCopy.setOnClickListener(x -> {
+            String text = buildLogTextForExport();
+            if (text.isEmpty()) {
+                android.widget.Toast.makeText(requireContext(),
+                        "Nothing to copy", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            android.content.ClipboardManager cm = (android.content.ClipboardManager)
+                    requireContext().getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+            cm.setPrimaryClip(android.content.ClipData.newPlainText(
+                    "HumanRadar logs", text));
+            android.widget.Toast.makeText(requireContext(),
+                    "Copied " + text.split("\n").length + " lines to clipboard",
+                    android.widget.Toast.LENGTH_SHORT).show();
+        });
+
+        btnShare.setOnClickListener(x -> {
+            String text = buildLogTextForExport();
+            if (text.isEmpty()) {
+                android.widget.Toast.makeText(requireContext(),
+                        "Nothing to share", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            android.content.Intent send = new android.content.Intent(
+                    android.content.Intent.ACTION_SEND);
+            send.setType("text/plain");
+            send.putExtra(android.content.Intent.EXTRA_SUBJECT,
+                    "HumanRadar logs " + new java.text.SimpleDateFormat(
+                            "yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                            .format(new java.util.Date()));
+            send.putExtra(android.content.Intent.EXTRA_TEXT, text);
+            startActivity(android.content.Intent.createChooser(send, "Share logs"));
         });
 
         mqtt.addLogListener(this);
@@ -233,6 +269,123 @@ public class LogsFragment extends Fragment
                 && swAutoScroll.isChecked() && eventAdapter.getItemCount() > 0) {
             rvEvents.scrollToPosition(eventAdapter.getItemCount() - 1);
         }
+    }
+
+    /**
+     * Build a plain-text dump of whichever list is currently on screen, with
+     * a header carrying everything a developer typically asks for when
+     * triaging a report: app version, current device + IP + fw, MQTT broker
+     * + connection state, transport mode + lane snapshot, timestamps.
+     *
+     * <p>If the ESP-logs tab is showing and a device filter is active, only
+     * that device's entries are exported.
+     */
+    private String buildLogTextForExport() {
+        StringBuilder sb = new StringBuilder(8 * 1024);
+        java.text.SimpleDateFormat ts = new java.text.SimpleDateFormat(
+                "yyyy-MM-dd HH:mm:ss", java.util.Locale.US);
+        sb.append("===== HumanRadar log export =====\n");
+        sb.append("Captured:    ").append(ts.format(new java.util.Date())).append('\n');
+        sb.append("App version: v").append(BuildConfig.VERSION_NAME)
+                .append(" (code ").append(BuildConfig.VERSION_CODE).append(")\n");
+        sb.append("Android:     ").append(android.os.Build.MANUFACTURER)
+                .append(' ').append(android.os.Build.MODEL)
+                .append(" / API ").append(android.os.Build.VERSION.SDK_INT).append('\n');
+
+        // Active MQTT context.
+        sb.append("Broker:      ").append(mqtt.getBrokerHost())
+                .append(':').append(mqtt.getBrokerPort())
+                .append(mqtt.isConnected() ? "  [connected]" : "  [DISCONNECTED]").append('\n');
+        sb.append("Active dev:  ").append(emptyAsDash(mqtt.getDeviceName()))
+                .append("   status=").append(emptyAsDash(mqtt.getDeviceStatus())).append('\n');
+
+        // Discovered devices snapshot.
+        java.util.List<MqttService.DiscoveredDevice> discovered = mqtt.getDiscoveredDevices();
+        sb.append("Discovered:  ").append(discovered.size()).append(" device(s)\n");
+        for (MqttService.DiscoveredDevice d : discovered) {
+            if (d == null) continue;
+            sb.append("  - ").append(d.deviceName)
+                    .append("   ip=").append(emptyAsDash(d.ip))
+                    .append("   fw=").append(emptyAsDash(d.fw))
+                    .append("   status=").append(emptyAsDash(d.status))
+                    .append("   age=").append(
+                            (System.currentTimeMillis() - d.lastSeenMs) / 1000L).append("s\n");
+        }
+
+        // Transport lane snapshot (Cloud / LAN / Hybrid).
+        try {
+            com.example.radarhumanapplication.transport.TransportSettings ts2 =
+                    com.example.radarhumanapplication.transport.TransportSettings
+                            .get(requireContext());
+            sb.append("Transport:   ").append(ts2.getMode())
+                    .append(ts2.isEnabled() ? "" : " [DISABLED]").append('\n');
+            com.example.radarhumanapplication.transport.HybridTransportManager mgr =
+                    com.example.radarhumanapplication.transport.HybridTransportManager
+                            .get(requireContext());
+            java.util.Map<String,
+                    com.example.radarhumanapplication.transport.HybridTransportManager
+                            .DeviceTransportStatus> snap = mgr.snapshot();
+            for (java.util.Map.Entry<String,
+                    com.example.radarhumanapplication.transport.HybridTransportManager
+                            .DeviceTransportStatus> e : snap.entrySet()) {
+                com.example.radarhumanapplication.transport.HybridTransportManager
+                        .DeviceTransportStatus s = e.getValue();
+                sb.append("  - ").append(e.getKey())
+                        .append("   lane=").append(s.lane)
+                        .append("   wsState=").append(s.wsState)
+                        .append("   ip=").append(emptyAsDash(s.ip)).append('\n');
+            }
+        } catch (Exception ignored) {}
+
+        sb.append("\n");
+        if (rvEvents != null && rvEvents.getVisibility() == View.VISIBLE) {
+            sb.append("--- Detection events (").append(eventAdapter.getItemCount())
+                    .append(") ---\n");
+            for (Event ev : eventLogger.getEvents()) {
+                sb.append(ts.format(new java.util.Date(ev.timestamp))).append(' ')
+                        .append(ev.type == null ? "?" : ev.type.name()).append("  ")
+                        .append(ev.description == null ? "" : ev.description).append('\n');
+            }
+        } else {
+            // ESP-logs view. Honor the device filter so a shared dump matches
+            // what the user actually saw on screen.
+            String filter = (acLogDevice == null || acLogDevice.getText() == null)
+                    ? "" : acLogDevice.getText().toString();
+            boolean filterAll = filter.isEmpty() || LOG_DEVICE_ALL.equals(filter);
+            java.util.List<MqttService.LogEntry> buf = mqtt.getLogBuffer();
+            sb.append("--- ESP32 logs (").append(buf.size())
+                    .append(filterAll ? ", all devices" : (", filter=" + filter))
+                    .append(") ---\n");
+            for (MqttService.LogEntry e : buf) {
+                if (!filterAll && !filter.equals(e.device)) continue;
+                sb.append('[').append(e.timestamp).append("] ")
+                        .append('[').append(pad(e.level, 5)).append("] ");
+                if (e.device != null && !e.device.isEmpty()) {
+                    sb.append(e.device).append(' ');
+                }
+                if (e.tag != null && !e.tag.isEmpty()) {
+                    sb.append('[').append(e.tag).append("] ");
+                }
+                sb.append(e.message == null ? "" : e.message);
+                if (e.freeHeap > 0)  sb.append("   heap=").append(e.freeHeap);
+                if (e.uptime  > 0)   sb.append("   up=").append(e.uptime).append('s');
+                sb.append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
+    private static String emptyAsDash(String s) {
+        return (s == null || s.isEmpty()) ? "—" : s;
+    }
+
+    private static String pad(String s, int n) {
+        if (s == null) s = "?";
+        if (s.length() >= n) return s;
+        StringBuilder sb = new StringBuilder(n);
+        sb.append(s);
+        while (sb.length() < n) sb.append(' ');
+        return sb.toString();
     }
 
     private void updateCount() {
