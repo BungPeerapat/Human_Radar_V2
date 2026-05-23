@@ -67,6 +67,8 @@ public class DashboardFragment extends Fragment
     private TextView tvDeviceHubCount, tvDeviceHubEmpty;
     private MaterialButton btnHealthCheckAll;
     private MaterialButton btnPurgeOffline;
+    private MaterialButton btnTransportSettings;
+    private TextView tvTransportBadge;
     private DeviceHubAdapter deviceHubAdapter;
     private static final String DEVICE_HUB_PREFS = "device_hub_prefs";
     private static final String DEVICE_HUB_PINNED_KEY = "pinned_devices";
@@ -134,8 +136,10 @@ public class DashboardFragment extends Fragment
         rvDeviceHub        = v.findViewById(R.id.rv_device_hub);
         tvDeviceHubCount   = v.findViewById(R.id.tv_device_hub_count);
         tvDeviceHubEmpty   = v.findViewById(R.id.tv_device_hub_empty);
-        btnHealthCheckAll  = v.findViewById(R.id.btn_health_check_all);
-        btnPurgeOffline    = v.findViewById(R.id.btn_purge_offline);
+        btnHealthCheckAll     = v.findViewById(R.id.btn_health_check_all);
+        btnPurgeOffline       = v.findViewById(R.id.btn_purge_offline);
+        btnTransportSettings  = v.findViewById(R.id.btn_transport_settings);
+        tvTransportBadge      = v.findViewById(R.id.tv_transport_badge);
         rvDeviceHub.setLayoutManager(new LinearLayoutManager(requireContext()));
         deviceHubAdapter = new DeviceHubAdapter(requireContext(),
                 this::onDeviceHubTap,
@@ -143,6 +147,13 @@ public class DashboardFragment extends Fragment
         rvDeviceHub.setAdapter(deviceHubAdapter);
         btnHealthCheckAll.setOnClickListener(x -> onHealthCheckAllClick());
         btnPurgeOffline.setOnClickListener(x -> onPurgeOfflineClick());
+        btnTransportSettings.setOnClickListener(x ->
+                com.example.radarhumanapplication.transport.TransportSettingsDialog
+                        .show(getParentFragmentManager()));
+        tvTransportBadge.setOnClickListener(x ->
+                com.example.radarhumanapplication.transport.TransportSettingsDialog
+                        .show(getParentFragmentManager()));
+        refreshTransportBadge();
         // Device-name dropdown: backing adapter that's refreshed every time the
         // discovery feed changes. Tap the field (threshold=0) to see the list.
         deviceNameAdapter = new ArrayAdapter<>(requireContext(),
@@ -179,6 +190,11 @@ public class DashboardFragment extends Fragment
         mqtt.addStatusListener(this);
         mqtt.addCmdAckListener(this);
         mqtt.addDiscoveryListener(this);
+        // Refresh the transport badge whenever the user changes mode /
+        // toggles the master switch / hides the badge from advanced settings.
+        com.example.radarhumanapplication.transport.TransportSettings
+                .get(requireContext())
+                .addListener(transportSettingsListener);
 
         // Show existing state
         if (mqtt.isConnected()) {
@@ -196,9 +212,18 @@ public class DashboardFragment extends Fragment
         mqtt.removeStatusListener(this);
         mqtt.removeCmdAckListener(this);
         mqtt.removeDiscoveryListener(this);
+        com.example.radarhumanapplication.transport.TransportSettings
+                .get(requireContext())
+                .removeListener(transportSettingsListener);
         recHandler.removeCallbacks(recTick);
         super.onDestroyView();
     }
+
+    private final com.example.radarhumanapplication.transport.TransportSettings.Listener
+            transportSettingsListener = settings -> {
+                if (!isAdded()) return;
+                refreshTransportBadge();
+            };
 
     @Override
     public void onDeviceDiscovered(String deviceName, String status, long lastSeenMs) {
@@ -269,6 +294,41 @@ public class DashboardFragment extends Fragment
                             com.google.android.material.snackbar.Snackbar.LENGTH_LONG)
                     .setAction("SWITCH", v -> onDeviceHubTap(target))
                     .show();
+        }
+    }
+
+    /** Refresh the small "🔄 HYBRID" / "☁ CLOUD" / "📡 LAN" chip in the hub
+     *  header. Reflects the user's chosen mode + master-enable. Hidden when
+     *  the user disables the transport badge in advanced settings. */
+    private void refreshTransportBadge() {
+        if (tvTransportBadge == null) return;
+        com.example.radarhumanapplication.transport.TransportSettings ts =
+                com.example.radarhumanapplication.transport.TransportSettings
+                        .get(requireContext());
+        if (!ts.isShowBadge()) {
+            tvTransportBadge.setVisibility(View.GONE);
+            return;
+        }
+        tvTransportBadge.setVisibility(View.VISIBLE);
+        if (!ts.isEnabled()) {
+            tvTransportBadge.setText("⏻ OFF");
+            tvTransportBadge.setTextColor(getColor(R.color.radar_text_dim));
+            return;
+        }
+        switch (ts.getMode()) {
+            case CLOUD:
+                tvTransportBadge.setText("☁ CLOUD");
+                tvTransportBadge.setTextColor(getColor(R.color.radar_blue));
+                break;
+            case LAN:
+                tvTransportBadge.setText("📡 LAN");
+                tvTransportBadge.setTextColor(getColor(R.color.radar_green));
+                break;
+            case HYBRID:
+            default:
+                tvTransportBadge.setText("🔄 HYBRID");
+                tvTransportBadge.setTextColor(getColor(R.color.radar_yellow));
+                break;
         }
     }
 

@@ -82,6 +82,7 @@ dependencies {
     implementation(libs.constraintlayout)
     implementation(libs.hivemq.mqtt)
     implementation(libs.gson)
+    implementation(libs.okhttp)
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)

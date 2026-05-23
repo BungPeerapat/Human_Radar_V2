@@ -54,6 +54,13 @@ public class MainActivity extends AppCompatActivity {
         // fire even when the user is not on the Alerts tab.
         AlertManager.getInstance().attach(getApplicationContext());
 
+        // Start the LAN/Cloud/Hybrid transport orchestrator. Decides per-device
+        // whether radar frames come from cloud MQTT or a direct LAN WebSocket,
+        // and feeds both into MqttService.dispatchTargetsToListeners so the rest
+        // of the app doesn't have to care.
+        com.example.radarhumanapplication.transport.HybridTransportManager
+                .get(getApplicationContext()).start();
+
         // Android 13+ requires runtime POST_NOTIFICATIONS permission for the foreground service notification.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)

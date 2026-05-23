@@ -62,6 +62,11 @@ public class MqttService {
     /** When true, live MQTT target frames are not fanned out to TargetListeners
      *  (used by SessionReplayer to avoid mixing live + replay frames). */
     private volatile boolean liveTargetMuted = false;
+    /** Per-device MQTT mute set — populated by the HybridTransportManager so
+     *  a LAN WebSocket frame doesn't compete with a cloud MQTT frame for
+     *  the same device. Deviceless frames are never muted. */
+    private final java.util.Set<String> mqttMutedDevices =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<>());
 
     // Listeners
     public interface ConnectionListener {
@@ -305,6 +310,18 @@ public class MqttService {
      *  doesn't see live and replayed frames at the same time. */
     public void setLiveTargetMute(boolean muted) { this.liveTargetMuted = muted; }
     public boolean isLiveTargetMuted() { return liveTargetMuted; }
+
+    /** Per-device mute for cloud MQTT frames. The HybridTransportManager calls
+     *  {@code muteMqttFor(name, true)} when it brings up a LAN WebSocket for
+     *  that device, so the consumer doesn't see the same target twice. */
+    public void muteMqttFor(String deviceName, boolean muted) {
+        if (deviceName == null || deviceName.isEmpty()) return;
+        if (muted) mqttMutedDevices.add(deviceName);
+        else       mqttMutedDevices.remove(deviceName);
+    }
+    public boolean isMqttMutedFor(String deviceName) {
+        return deviceName != null && mqttMutedDevices.contains(deviceName);
+    }
 
     /** Extra "humanradar/&lt;name&gt;/targets" subscriptions added on top of the active
      *  device's primary subscription. Used by the Radar tab's multi-device
@@ -642,6 +659,12 @@ public class MqttService {
             // without needing a parallel signal path.
             String src = extractDeviceFromTopic(publish.getTopic().toString());
             if (src != null && !src.isEmpty()) data.addProperty("_dev", src);
+            data.addProperty("_transport", "cloud");
+            // Drop cloud frames for devices whose LAN WebSocket is currently
+            // alive — HybridTransportManager already delivers those, and we
+            // don't want RadarView to see each target twice.
+            final String devKey = (src == null) ? "" : src;
+            if (!devKey.isEmpty() && mqttMutedDevices.contains(devKey)) return;
             lastTargetData = data;
             mainHandler.post(() -> {
                 // Feed the alert pattern player (independent of UI listeners)

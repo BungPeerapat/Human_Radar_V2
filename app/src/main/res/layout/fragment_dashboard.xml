@@ -46,6 +46,36 @@
                     android:fontFamily="monospace"
                     android:layout_marginEnd="8dp" />
 
+                <TextView
+                    android:id="@+id/tv_transport_badge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="🔄 HYBRID"
+                    android:textColor="@color/radar_blue"
+                    android:textSize="10sp"
+                    android:textStyle="bold"
+                    android:background="@color/radar_input_bg"
+                    android:paddingHorizontal="6dp"
+                    android:paddingVertical="2dp"
+                    android:layout_marginEnd="6dp"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_transport_settings"
+                    style="?attr/materialButtonOutlinedStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="⚙"
+                    android:textSize="14sp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:paddingHorizontal="8dp"
+                    android:minWidth="32dp"
+                    android:minHeight="32dp"
+                    android:layout_marginEnd="4dp"
+                    android:contentDescription="Transport settings" />
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btn_health_check_all"
                     style="?attr/materialButtonOutlinedStyle"
