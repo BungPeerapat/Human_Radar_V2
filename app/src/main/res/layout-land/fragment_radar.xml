@@ -55,6 +55,87 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent" />
 
+            <!-- Active device chip (mirrors portrait) — kept in landscape so
+                 the user can switch devices without leaving the radar. -->
+            <LinearLayout
+                android:id="@+id/active_device_chip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|center_horizontal"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="#CC000000"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:focusable="true"
+                android:clickable="true">
+
+                <TextView
+                    android:id="@+id/active_device_dot"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="●"
+                    android:textColor="@color/radar_green"
+                    android:textSize="14sp"
+                    android:fontFamily="monospace"
+                    android:layout_marginEnd="6dp" />
+
+                <TextView
+                    android:id="@+id/active_device_name"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="HumanRadar"
+                    android:textColor="@color/white"
+                    android:textSize="12sp"
+                    android:fontFamily="monospace"
+                    android:singleLine="true"
+                    android:ellipsize="middle"
+                    android:maxWidth="220dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=" ▾"
+                    android:textColor="@color/radar_text_dim"
+                    android:textSize="10sp"
+                    android:layout_marginStart="4dp" />
+            </LinearLayout>
+
+            <!-- Replay badge (mirrors portrait) — shown while SessionReplayer
+                 is active so live vs replay frames are visually distinct. -->
+            <LinearLayout
+                android:id="@+id/replay_badge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="top|start"
+                android:layout_margin="6dp"
+                android:orientation="vertical"
+                android:background="#CCFFB300"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="4dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:id="@+id/replay_badge_title"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="▶ REPLAY"
+                    android:textColor="#000000"
+                    android:textSize="13sp"
+                    android:textStyle="bold"
+                    android:fontFamily="monospace" />
+
+                <TextView
+                    android:id="@+id/replay_badge_detail"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="#000000"
+                    android:textSize="11sp"
+                    android:fontFamily="monospace" />
+            </LinearLayout>
+
             <LinearLayout
                 android:id="@+id/radar_ux_overlay"
                 android:layout_width="wrap_content"
@@ -104,6 +185,14 @@
                     android:src="@android:drawable/ic_menu_camera"
                     android:background="?android:attr/selectableItemBackgroundBorderless"
                     android:contentDescription="Snapshot" />
+
+                <ImageButton
+                    android:id="@+id/btn_multi_device"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:src="@android:drawable/ic_menu_share"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="Show multiple devices" />
             </LinearLayout>
         </FrameLayout>
 

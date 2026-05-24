@@ -115,14 +115,22 @@ public class RadarFragment extends Fragment
         btnLockOrientation = v.findViewById(R.id.btn_lock_orientation);
         btnNightMode = v.findViewById(R.id.btn_night_mode);
         btnSnapshot = v.findViewById(R.id.btn_snapshot);
-        btnMultiDevice = v.findViewById(R.id.btn_multi_device);
-        btnMultiDevice.setOnClickListener(view -> openMultiDevicePicker());
-        replayBadge = v.findViewById(R.id.replay_badge);
+        // Each of these IDs may legitimately be absent in alternate layouts
+        // (currently layout-land matches portrait, but null-guard so any
+        // future drift just disables that surface instead of crashing the
+        // app on orientation change with a NullPointerException).
+        btnMultiDevice    = v.findViewById(R.id.btn_multi_device);
+        replayBadge       = v.findViewById(R.id.replay_badge);
         replayBadgeDetail = v.findViewById(R.id.replay_badge_detail);
-        activeDeviceChip = v.findViewById(R.id.active_device_chip);
-        activeDeviceName = v.findViewById(R.id.active_device_name);
-        activeDeviceDot  = v.findViewById(R.id.active_device_dot);
-        activeDeviceChip.setOnClickListener(view -> openDevicePickerForRadar());
+        activeDeviceChip  = v.findViewById(R.id.active_device_chip);
+        activeDeviceName  = v.findViewById(R.id.active_device_name);
+        activeDeviceDot   = v.findViewById(R.id.active_device_dot);
+        if (btnMultiDevice != null) {
+            btnMultiDevice.setOnClickListener(view -> openMultiDevicePicker());
+        }
+        if (activeDeviceChip != null) {
+            activeDeviceChip.setOnClickListener(view -> openDevicePickerForRadar());
+        }
         refreshActiveDeviceChip();
 
         radarView.setInfoListener((targets, frameCount, errorCount, fps) -> {
@@ -187,7 +195,8 @@ public class RadarFragment extends Fragment
 
     /** Update the active-device chip to reflect MqttService's current target. */
     private void refreshActiveDeviceChip() {
-        if (activeDeviceName == null) return;
+        // The chip may legitimately be absent in alternate layouts.
+        if (activeDeviceName == null || activeDeviceDot == null) return;
         String name = mqtt.getDeviceName();
         activeDeviceName.setText(name == null || name.isEmpty() ? "(no device)" : name);
         boolean online = "online".equalsIgnoreCase(deviceStatus);
