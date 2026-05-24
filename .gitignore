@@ -1,6 +1,8 @@
 # PlatformIO build artifacts
 firmware/.pio/
 firmware/.vscode/
+bridge/.pio/
+bridge/.vscode/
 
 # Arduino IDE build
 build/
