@@ -101,6 +101,11 @@ public final class HybridTransportManager
     private final Map<String, TransportLane> laneByDevice = new HashMap<>();
     /** deviceName -> last-known IP for direct connect. */
     private final Map<String, String> ipByDevice = new HashMap<>();
+    /** mDNS scanner — provides LAN-only discovery when the broker is down. */
+    private MdnsScanner mdnsScanner;
+    /** Device names that came from mDNS but not yet seen on MQTT — kept so
+     *  the snapshot reports them in the live status panel. */
+    private final Map<String, String> mdnsIpByDevice = new HashMap<>();
 
     private final java.util.List<StatusListener> statusListeners =
             new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -117,6 +122,10 @@ public final class HybridTransportManager
         started = true;
         settings.addListener(this);
         mqtt.addDiscoveryListener(this);
+        // Start the LAN mDNS scanner if the user has it enabled — this gives
+        // us per-device IPs even when the MQTT broker is unreachable, which
+        // is the whole point of having a LAN fallback.
+        startMdnsIfEnabled();
         // Mute live-target fan-out for LAN-active devices so frames don't
         // double up. We do per-device muting via the _transport tag inside
         // dispatchTargetsToListeners — kept on the MqttService side.
@@ -128,12 +137,56 @@ public final class HybridTransportManager
         started = false;
         settings.removeListener(this);
         mqtt.removeDiscoveryListener(this);
+        stopMdns();
         for (DirectWsTransport t : wsByDevice.values()) {
             try { t.close(); } catch (Exception ignored) {}
         }
         wsByDevice.clear();
         laneByDevice.clear();
+        mdnsIpByDevice.clear();
         notifyStatus();
+    }
+
+    private synchronized void startMdnsIfEnabled() {
+        if (!settings.isMdnsEnabled()) { stopMdns(); return; }
+        if (mdnsScanner != null && mdnsScanner.isRunning()) return;
+        mdnsScanner = new MdnsScanner(appContext, new MdnsScanner.Listener() {
+            @Override public void onMdnsDeviceResolved(String deviceName,
+                    String ip, int port, String fw,
+                    java.util.Map<String, String> txt) {
+                synchronized (HybridTransportManager.this) {
+                    if (deviceName == null || deviceName.isEmpty()
+                            || ip == null || ip.isEmpty()) return;
+                    String prev = ipByDevice.put(deviceName, ip);
+                    mdnsIpByDevice.put(deviceName, ip);
+                    if (settings.isVerboseLog() || prev == null
+                            || !ip.equals(prev)) {
+                        mqtt.injectAppLog("INFO", "MDNS",
+                                deviceName + " resolved → " + ip + ":" + port
+                                        + (fw == null || fw.isEmpty()
+                                                ? "" : "  fw=" + fw));
+                    }
+                }
+                reconcile();
+            }
+            @Override public void onMdnsDeviceLost(String serviceName) {
+                if (settings.isVerboseLog()) {
+                    mqtt.injectAppLog("WARN", "MDNS",
+                            "Service lost: " + serviceName);
+                }
+                // We don't proactively close the WS — the WS auto-reconnect
+                // handles network blips. Only mark in the snapshot.
+                notifyStatus();
+            }
+        });
+        mdnsScanner.start();
+    }
+
+    private synchronized void stopMdns() {
+        if (mdnsScanner != null) {
+            try { mdnsScanner.stop(); } catch (Exception ignored) {}
+            mdnsScanner = null;
+        }
     }
 
     public void addStatusListener(StatusListener l) {
@@ -319,6 +372,11 @@ public final class HybridTransportManager
 
     @Override
     public void onTransportSettingsChanged(TransportSettings s) {
+        // Toggling mDNS on/off in settings should take effect immediately.
+        if (started) {
+            if (s.isMdnsEnabled()) startMdnsIfEnabled();
+            else stopMdns();
+        }
         reconcile();
     }
 

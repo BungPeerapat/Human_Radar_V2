@@ -93,7 +93,18 @@ void WebRadarServer::setupMDNS() {
 
     if (MDNS.begin(hostname.c_str())) {
         MDNS.addService("http", "tcp", WEB_SERVER_PORT);
-        Log::info("mDNS: http://%s.local", hostname.c_str());
+        // Custom service type the Android app's NsdManager scans for. Includes
+        // TXT records carrying the original mixed-case device name, fw, and
+        // the radar WebSocket path so the HybridTransportManager can connect
+        // without round-tripping through MQTT first.
+        MDNS.addService("humanradar", "tcp", WEBSOCKET_PORT);
+        MDNS.addServiceTxt("humanradar", "tcp", "name", cfg.deviceName);
+        MDNS.addServiceTxt("humanradar", "tcp", "fw",   FW_VERSION);
+        MDNS.addServiceTxt("humanradar", "tcp", "path", "/");
+        MDNS.addServiceTxt("humanradar", "tcp", "ws",   String(WEBSOCKET_PORT));
+        MDNS.addServiceTxt("humanradar", "tcp", "http", String(WEB_SERVER_PORT));
+        Log::info("mDNS: http://%s.local  +  _humanradar._tcp.local:%d",
+                  hostname.c_str(), WEBSOCKET_PORT);
     } else {
         Log::error("mDNS failed to start");
     }
