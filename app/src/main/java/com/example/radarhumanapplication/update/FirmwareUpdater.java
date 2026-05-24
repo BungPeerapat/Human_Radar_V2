@@ -85,6 +85,82 @@ public final class FirmwareUpdater {
     /** Default wait for the device to republish {@code /info} on the new fw. */
     public static final long DEFAULT_MQTT_VERIFY_TIMEOUT_MS = 60_000;
 
+    /**
+     * Quick pre-flight reachability check. Hits {@code GET /api/version}
+     * on the candidate IP with a short timeout and returns the parsed fw
+     * version, or null if unreachable. Lets the install flow bail fast
+     * with a clear error instead of silently "succeeding" against an
+     * unreachable host.
+     */
+    public void probeReachability(String deviceIp, java.util.function.Consumer<String> cb) {
+        io.execute(() -> {
+            String fw = null;
+            try {
+                HttpURLConnection c = (HttpURLConnection)
+                        new URL("http://" + deviceIp + "/api/version")
+                                .openConnection();
+                c.setConnectTimeout(3_000);
+                c.setReadTimeout(3_000);
+                c.setRequestMethod("GET");
+                int code = c.getResponseCode();
+                if (code / 100 == 2) {
+                    StringBuilder sb = new StringBuilder();
+                    try (java.io.BufferedReader r = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(c.getInputStream(),
+                                    java.nio.charset.StandardCharsets.UTF_8))) {
+                        String line;
+                        while ((line = r.readLine()) != null) sb.append(line);
+                    }
+                    com.google.gson.JsonObject o = com.google.gson.JsonParser
+                            .parseString(sb.toString()).getAsJsonObject();
+                    if (o.has("fw")) fw = o.get("fw").getAsString();
+                    else fw = "?";
+                }
+                c.disconnect();
+            } catch (Exception e) {
+                Log.d(TAG, "probeReachability failed: " + e.getMessage());
+            }
+            final String fwFinal = fw;
+            main.post(() -> cb.accept(fwFinal));
+        });
+    }
+
+    /**
+     * MQTT-pull OTA: publish an {@code ota_pull} command to the device
+     * via the existing broker connection, telling it to download the
+     * firmware .bin from {@code binUrl} itself. Works from anywhere with
+     * MQTT + internet — no LAN reachability from the phone needed.
+     *
+     * <p>The {@link InstallCallback#onUploaded()} callback fires when the
+     * command is published; the caller should then call
+     * {@link #verifyOnMqtt} to wait for the device to come back with
+     * the new fw version.
+     */
+    public void installViaMqtt(FirmwareManifest manifest, String deviceName,
+                               InstallCallback cb) {
+        if (manifest == null || !manifest.isUsable()) {
+            main.post(() -> cb.onError("Manifest is empty"));
+            return;
+        }
+        if (deviceName == null || deviceName.isEmpty()) {
+            main.post(() -> cb.onError("Device name is required for MQTT OTA"));
+            return;
+        }
+        com.example.radarhumanapplication.MqttService mqtt =
+                com.example.radarhumanapplication.MqttService.getInstance();
+        if (!mqtt.isConnected()) {
+            main.post(() -> cb.onError("MQTT not connected — cannot send ota_pull"));
+            return;
+        }
+        com.google.gson.JsonObject extras = new com.google.gson.JsonObject();
+        extras.addProperty("url", manifest.binUrl);
+        mqtt.sendCommandToWithExtras(deviceName, "ota_pull", extras);
+        mqtt.injectAppLog("INFO", "OTA",
+                "Sent ota_pull to " + deviceName + " → " + manifest.binUrl);
+        main.post(() -> cb.onProgress(50, "Waiting for ESP32 to download + flash"));
+        main.post(cb::onUploaded);
+    }
+
     private final Context appContext;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());

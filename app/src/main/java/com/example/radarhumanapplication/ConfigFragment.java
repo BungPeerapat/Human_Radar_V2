@@ -781,10 +781,131 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnFwCheck.setEnabled(false);
         btnFwPick.setEnabled(false);
         btnFwUpload.setEnabled(false);
-        showFwProgress("Starting", 0);
-        setFwStatus("Starting…", false);
+        showFwProgress("Probing " + ip, 0);
+        setFwStatus("Checking if " + ip + " is reachable on this network…", false);
 
         final com.example.radarhumanapplication.update.FirmwareUpdater updater = firmwareUpdater;
+        // Pre-flight reachability check. If GET /api/version doesn't respond
+        // within 3 s, the HTTP push path won't work either — offer the user
+        // a one-tap MQTT-pull fallback instead of silently "succeeding"
+        // against an unreachable host.
+        updater.probeReachability(ip, currentFw -> {
+            if (!isAdded()) return;
+            if (currentFw == null) {
+                offerMqttFallbackOrCancel(manifest, ip, label);
+                return;
+            }
+            // Reachable — proceed with HTTP push as before.
+            doHttpFirmwareInstall(updater, manifest, ip, label);
+        });
+    }
+
+    /** Dialog: "ESP32 isn't reachable on HTTP — install via MQTT instead?"
+     *  Offers the MQTT-pull path which works as long as both the phone and
+     *  the device can reach the broker. */
+    private void offerMqttFallbackOrCancel(
+            com.example.radarhumanapplication.update.FirmwareManifest manifest,
+            String ip, String label) {
+        hideFwProgress();
+        btnFwCheck.setEnabled(true);
+        btnFwPick.setEnabled(true);
+        btnFwUpload.setEnabled(pickedFirmwareUri != null);
+        setFwStatus("HTTP to " + ip + " unreachable", true);
+
+        boolean canMqtt = mqtt.isConnected()
+                && mqtt.getDeviceName() != null
+                && !mqtt.getDeviceName().isEmpty();
+        androidx.appcompat.app.AlertDialog.Builder b =
+                new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                        .setTitle("ESP32 not reachable")
+                        .setMessage("Cannot reach " + label + " at " + ip
+                                + " over HTTP. Likely causes:\n"
+                                + "  • phone on a different WiFi network\n"
+                                + "  • ESP32 powered off or in AP mode\n"
+                                + "  • firewall blocking port 80\n\n"
+                                + (canMqtt
+                                        ? "Want to install via MQTT instead? "
+                                                + "The ESP32 will download the firmware "
+                                                + "itself from GitHub Releases."
+                                        : "Connect to MQTT first to use the "
+                                                + "MQTT-pull fallback."))
+                        .setNegativeButton("Cancel", null);
+        if (canMqtt) {
+            b.setPositiveButton("Install via MQTT",
+                    (d, w) -> startMqttFirmwareInstall(manifest, label));
+        }
+        b.show();
+    }
+
+    /** MQTT-pull install: publish ota_pull cmd, then verify via MQTT. */
+    private void startMqttFirmwareInstall(
+            com.example.radarhumanapplication.update.FirmwareManifest manifest,
+            String label) {
+        btnFwCheck.setEnabled(false);
+        btnFwPick.setEnabled(false);
+        btnFwUpload.setEnabled(false);
+        showFwProgress("Sending ota_pull via MQTT", 50);
+        setFwStatus("ESP32 will download from " + manifest.binUrl + "…", false);
+
+        final String expectedName = mqtt.getDeviceName();
+        final com.example.radarhumanapplication.update.FirmwareUpdater updater = firmwareUpdater;
+        updater.installViaMqtt(manifest, expectedName,
+                new com.example.radarhumanapplication.update.FirmwareUpdater.InstallCallback() {
+                    @Override public void onProgress(int p, String phase) {
+                        if (!isAdded()) return;
+                        showFwProgress(phase, p);
+                    }
+                    @Override public void onUploaded() {
+                        if (!isAdded()) return;
+                        showFwProgress("Waiting for ESP32 to flash + reboot", 100);
+                        setFwStatus("ESP32 is downloading and flashing — this "
+                                + "can take 60-120s. Watch GPIO26 for the OTA "
+                                + "heartbeat (1 pulse / 1.5s).", false);
+                        // Bigger timeout for MQTT-pull — ESP has to download
+                        // + flash from scratch, not just receive bytes.
+                        updater.verifyOnMqtt(
+                                expectedName, manifest.versionName,
+                                /*deviceIpHint=*/ null,
+                                180_000, this);
+                    }
+                    @Override public void onInstalled(
+                            com.example.radarhumanapplication.update.FirmwareUpdater
+                                    .MqttVerifyResult info) {
+                        if (!isAdded()) return;
+                        hideFwProgress();
+                        btnFwCheck.setEnabled(true);
+                        btnFwPick.setEnabled(true);
+                        btnFwUpload.setEnabled(pickedFirmwareUri != null);
+                        setFwStatus("ESP32 (" + label + ") now running v"
+                                + (info.fw.isEmpty() ? manifest.versionName : info.fw),
+                                false);
+                        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                                .setTitle("MQTT OTA installed")
+                                .setMessage("Device:    " + info.deviceName
+                                        + "\nFirmware:  v" + (info.fw.isEmpty()
+                                                ? manifest.versionName : info.fw)
+                                        + (info.ip.isEmpty() ? "" : "\nIP:        " + info.ip)
+                                        + "\n\n✅ Verified via MQTT.")
+                                .setPositiveButton("OK", null)
+                                .show();
+                    }
+                    @Override public void onError(String message) {
+                        if (!isAdded()) return;
+                        hideFwProgress();
+                        btnFwCheck.setEnabled(true);
+                        btnFwPick.setEnabled(true);
+                        btnFwUpload.setEnabled(pickedFirmwareUri != null);
+                        setFwStatus("MQTT OTA failed: " + message, true);
+                    }
+                });
+    }
+
+    private void doHttpFirmwareInstall(
+            final com.example.radarhumanapplication.update.FirmwareUpdater updater,
+            com.example.radarhumanapplication.update.FirmwareManifest manifest,
+            String ip, String label) {
+        showFwProgress("Starting", 0);
+        setFwStatus("Starting…", false);
         updater.install(manifest, ip,
                 new com.example.radarhumanapplication.update.FirmwareUpdater.InstallCallback() {
                     @Override public void onProgress(int percent, String phase) {

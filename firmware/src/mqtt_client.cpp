@@ -3,6 +3,10 @@
 #include "power_monitor.h"
 #include "alert_pattern.h"
 
+#include <HTTPClient.h>
+#include <Update.h>
+#include <WiFiClientSecure.h>
+
 MqttRadarClient mqttClient;
 
 // Static instance pointer for callback routing
@@ -450,6 +454,20 @@ void MqttRadarClient::handleCommand(const uint8_t* payload, unsigned int length)
             requestId, count, useLong ? 1 : 0);
         _mqtt.publish(_topicCmdAck, ack);
         Log::info(TAG_MQTT, "CMD: alert_test count=%d long=%d", count, useLong ? 1 : 0);
+    } else if (strcmp(cmd, "ota_pull") == 0) {
+        // Pull-based OTA — ESP32 downloads the .bin from the URL the app
+        // gives it, then flashes itself and reboots. Works from anywhere
+        // with internet access, no LAN reachability from the phone needed.
+        const char* url = doc["url"] | "";
+        if (strlen(url) == 0) {
+            char ack[192];
+            snprintf(ack, sizeof(ack),
+                "{\"request_id\":\"%s\",\"status\":\"error\","
+                "\"message\":\"ota_pull missing url\"}", requestId);
+            _mqtt.publish(_topicCmdAck, ack);
+        } else {
+            cmdOtaPull(requestId, url);
+        }
     } else {
         Log::warn(TAG_MQTT, "Unknown command: %s", cmd);
         // Publish error ACK
@@ -544,6 +562,114 @@ void MqttRadarClient::cmdHealth(const char* requestId) {
         (unsigned)pwr.healthScore,
         (unsigned)pwr.healthLevel);
     _mqtt.publish(_topicCmdAck, ack);
+}
+
+// Pull-based OTA. The app publishes a URL of a .bin in GitHub Releases
+// (or any reachable HTTPS endpoint); the ESP downloads the bytes itself
+// and streams them into Update.write(). The huge advantage over the
+// HTTP-push path is that the app doesn't need to reach the ESP on the
+// LAN — works from anywhere with MQTT + internet.
+void MqttRadarClient::cmdOtaPull(const char* requestId, const char* url) {
+    Log::info(TAG_MQTT, "CMD: ota_pull <- %s", url);
+
+    auto ackFail = [&](const char* msg, int code) {
+        char ack[384];
+        snprintf(ack, sizeof(ack),
+            "{\"request_id\":\"%s\",\"status\":\"error\",\"cmd\":\"ota_pull\","
+            "\"message\":\"%s\",\"http\":%d}", requestId, msg, code);
+        _mqtt.publish(_topicCmdAck, ack);
+    };
+
+    alertPattern.onFirmwareUpdateStart();
+    alertPattern.update();
+
+    WiFiClientSecure tlsClient;
+    tlsClient.setInsecure();
+    WiFiClient plainClient;
+
+    HTTPClient http;
+    http.setUserAgent("HumanRadar/" FW_VERSION);
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+    http.setReuse(false);
+    http.setTimeout(30000);
+
+    bool isHttps = (strncmp(url, "https://", 8) == 0);
+    bool ok = isHttps ? http.begin(tlsClient, url)
+                      : http.begin(plainClient, url);
+    if (!ok) {
+        alertPattern.onFirmwareUpdateFinish();
+        ackFail("http.begin failed", 0);
+        return;
+    }
+
+    int code = http.GET();
+    if (code != HTTP_CODE_OK) {
+        Log::error(TAG_MQTT, "ota_pull HTTP %d", code);
+        http.end();
+        alertPattern.onFirmwareUpdateFinish();
+        ackFail("HTTP GET failed", code);
+        return;
+    }
+
+    int total = http.getSize();
+    if (total <= 0) {
+        Log::warn(TAG_MQTT, "ota_pull: content-length unknown, using UPDATE_SIZE_UNKNOWN");
+    }
+    Log::info(TAG_MQTT, "ota_pull downloading %d bytes", total);
+
+    if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN)) {
+        http.end();
+        alertPattern.onFirmwareUpdateFinish();
+        ackFail(Update.errorString(), 0);
+        return;
+    }
+
+    WiFiClient* stream = http.getStreamPtr();
+    const size_t bufSize = 1024;
+    uint8_t buf[bufSize];
+    size_t written = 0;
+    uint32_t lastBlinkMs = millis();
+    while (http.connected() && (total <= 0 || (int)written < total)) {
+        size_t avail = stream->available();
+        if (avail == 0) { delay(1); continue; }
+        size_t toRead = avail > bufSize ? bufSize : avail;
+        int got = stream->readBytes(buf, toRead);
+        if (got <= 0) continue;
+        size_t wrote = Update.write(buf, got);
+        if (wrote != (size_t)got) {
+            Log::error(TAG_MQTT, "Update.write short %u/%d", (unsigned)wrote, got);
+            break;
+        }
+        written += wrote;
+        if (millis() - lastBlinkMs > 50) {
+            alertPattern.update();
+            lastBlinkMs = millis();
+        }
+        yield();
+    }
+    http.end();
+
+    if (!Update.end(true)) {
+        alertPattern.onFirmwareUpdateFinish();
+        ackFail(Update.errorString(), 0);
+        return;
+    }
+
+    Log::info(TAG_MQTT, "ota_pull complete: %u bytes flashed, restarting", (unsigned)written);
+    char ack[256];
+    snprintf(ack, sizeof(ack),
+        "{\"request_id\":\"%s\",\"status\":\"ok\",\"cmd\":\"ota_pull\","
+        "\"bytes\":%u,\"restarting\":true}", requestId, (unsigned)written);
+    _mqtt.publish(_topicCmdAck, ack);
+
+    alertPattern.onFirmwareUpdateFinish();
+    uint32_t finishDeadline = millis() + 2500;
+    while (alertPattern.isFirmwareUpdateActive()
+            && (int32_t)(millis() - finishDeadline) < 0) {
+        alertPattern.update();
+        delay(10);
+    }
+    ESP.restart();
 }
 
 void MqttRadarClient::cmdSetLogLevel(const char* requestId, const char* level) {
