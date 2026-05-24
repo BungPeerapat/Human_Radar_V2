@@ -9,8 +9,11 @@ import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * RecyclerView adapter for ESP32 log entries with optional device-name filter.
@@ -81,38 +84,95 @@ public class LogAdapter extends RecyclerView.Adapter<LogAdapter.ViewHolder> {
         return new ViewHolder(v);
     }
 
+    private static final SimpleDateFormat TIME_FMT =
+            new SimpleDateFormat("HH:mm:ss.SSS", Locale.US);
+
     @Override
     public void onBindViewHolder(@NonNull ViewHolder holder, int position) {
         MqttService.LogEntry entry = entries.get(position);
-        holder.tvLevel.setText(entry.level);
-        // When no filter is active, prefix the tag with the device name so the
-        // user can tell rows apart at a glance. When a filter IS active, all
-        // rows are from the same device — no need to repeat it.
-        String tag = entry.tag == null ? "" : entry.tag;
-        if (deviceFilter.isEmpty() && entry.device != null && !entry.device.isEmpty()) {
-            tag = entry.device + "·" + tag;
+
+        // Timestamp: prefer wall clock when ts > a year ago. ESP-side ts is
+        // millis-since-boot (small number) — show that raw so devs can
+        // correlate with serial output; app-side ts is epoch millis.
+        String time;
+        if (entry.timestamp > 1_000_000_000_000L) {
+            time = TIME_FMT.format(new Date(entry.timestamp));
+        } else {
+            time = String.format(Locale.US, "+%d.%03ds",
+                    entry.timestamp / 1000, entry.timestamp % 1000);
         }
-        holder.tvTag.setText(tag);
+        holder.tvTime.setText(time);
+
+        // Coloured level chip with white-on-color background.
+        int chipBg, stripeColor;
+        String level = entry.level == null ? "?" : entry.level;
+        switch (level) {
+            case "ERROR":
+                chipBg = stripeColor = context.getColor(R.color.radar_red);  break;
+            case "WARN":
+                chipBg = stripeColor = context.getColor(R.color.radar_yellow); break;
+            case "DEBUG":
+                chipBg = stripeColor = context.getColor(R.color.radar_text_dim); break;
+            case "RADAR":
+                chipBg = stripeColor = context.getColor(R.color.radar_blue); break;
+            default:
+                chipBg = stripeColor = context.getColor(R.color.radar_green); break;
+        }
+        holder.tvLevel.setText(pad5(level));
+        holder.tvLevel.setBackgroundColor(chipBg);
+        holder.vStripe.setBackgroundColor(stripeColor);
+
+        holder.tvTag.setText(entry.tag == null ? "" : entry.tag);
+
+        // Show device only when the "all devices" view is active. When the
+        // user has filtered to one device the column is redundant noise.
+        if (deviceFilter.isEmpty()
+                && entry.device != null && !entry.device.isEmpty()) {
+            holder.tvDevice.setText(entry.device);
+            holder.tvDevice.setVisibility(View.VISIBLE);
+        } else {
+            holder.tvDevice.setVisibility(View.GONE);
+        }
+
         holder.tvMsg.setText(entry.message);
 
-        int levelColor;
-        switch (entry.level) {
-            case "ERROR": levelColor = context.getColor(R.color.radar_red); break;
-            case "WARN":  levelColor = context.getColor(R.color.radar_yellow); break;
-            case "DEBUG": levelColor = context.getColor(R.color.radar_text_dim); break;
-            default:      levelColor = context.getColor(R.color.radar_green); break;
+        // Heap / uptime meta line — only when the ESP actually reported them.
+        StringBuilder meta = new StringBuilder();
+        if (entry.freeHeap > 0) meta.append("heap=").append(entry.freeHeap / 1024).append(" kB");
+        if (entry.uptime > 0) {
+            if (meta.length() > 0) meta.append("   ");
+            meta.append("up=").append(entry.uptime).append("s");
         }
-        holder.tvLevel.setTextColor(levelColor);
+        if (meta.length() > 0) {
+            holder.tvMeta.setText(meta);
+            holder.tvMeta.setVisibility(View.VISIBLE);
+        } else {
+            holder.tvMeta.setVisibility(View.GONE);
+        }
+    }
+
+    /** Right-pad to 5 chars so the level chip width stays stable. */
+    private static String pad5(String s) {
+        if (s.length() >= 5) return s.substring(0, 5);
+        StringBuilder sb = new StringBuilder(5);
+        sb.append(s);
+        while (sb.length() < 5) sb.append(' ');
+        return sb.toString();
     }
 
     static class ViewHolder extends RecyclerView.ViewHolder {
-        TextView tvLevel, tvTag, tvMsg;
+        final View vStripe;
+        final TextView tvTime, tvLevel, tvTag, tvDevice, tvMsg, tvMeta;
 
         ViewHolder(@NonNull View itemView) {
             super(itemView);
-            tvLevel = itemView.findViewById(R.id.tv_log_level);
-            tvTag = itemView.findViewById(R.id.tv_log_tag);
-            tvMsg = itemView.findViewById(R.id.tv_log_msg);
+            vStripe  = itemView.findViewById(R.id.v_log_stripe);
+            tvTime   = itemView.findViewById(R.id.tv_log_time);
+            tvLevel  = itemView.findViewById(R.id.tv_log_level);
+            tvTag    = itemView.findViewById(R.id.tv_log_tag);
+            tvDevice = itemView.findViewById(R.id.tv_log_device);
+            tvMsg    = itemView.findViewById(R.id.tv_log_msg);
+            tvMeta   = itemView.findViewById(R.id.tv_log_meta);
         }
     }
 }

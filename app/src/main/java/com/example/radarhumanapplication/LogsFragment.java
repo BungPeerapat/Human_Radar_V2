@@ -31,8 +31,32 @@ public class LogsFragment extends Fragment
     private LogAdapter adapter;
     private EventAdapter eventAdapter;
     private MaterialSwitch swAutoScroll;
+    private MaterialSwitch swAutoFetch;
     private TextView tvLogCount;
     private MqttService mqtt;
+    /** Smart-scroll state: true until the user manually scrolls away from
+     *  the bottom. When false, incoming logs do NOT snap the viewport back,
+     *  so the user can read older lines without them jumping under their
+     *  fingers. Resets the moment the user scrolls back to the bottom. */
+    private boolean logsStickToBottom = true;
+    private boolean eventsStickToBottom = true;
+    /** Periodic timer that pulls {@code get_log_buffer} from the ESP. Runs
+     *  only while {@link #swAutoFetch} is on AND MQTT is connected. */
+    private final android.os.Handler autoFetchHandler =
+            new android.os.Handler(android.os.Looper.getMainLooper());
+    private static final long AUTO_FETCH_INTERVAL_MS = 3_000;
+    private static final int  AUTO_FETCH_LIMIT       = 30;
+    private final Runnable autoFetchTick = new Runnable() {
+        @Override public void run() {
+            if (!isAdded()) return;
+            if (swAutoFetch != null && swAutoFetch.isChecked() && mqtt.isConnected()) {
+                com.google.gson.JsonObject extras = new com.google.gson.JsonObject();
+                extras.addProperty("limit", AUTO_FETCH_LIMIT);
+                mqtt.sendCommand("get_log_buffer", extras);
+            }
+            autoFetchHandler.postDelayed(this, AUTO_FETCH_INTERVAL_MS);
+        }
+    };
     private EventLogger eventLogger;
     private View eventFilterBar;
     private EditText etEventSearch;
@@ -60,6 +84,7 @@ public class LogsFragment extends Fragment
         rvLogs = v.findViewById(R.id.rv_logs);
         rvEvents = v.findViewById(R.id.rv_events);
         swAutoScroll = v.findViewById(R.id.sw_auto_scroll);
+        swAutoFetch  = v.findViewById(R.id.sw_auto_fetch);
         tvLogCount = v.findViewById(R.id.tv_log_count);
         MaterialButton btnFetch = v.findViewById(R.id.btn_fetch_logs);
         MaterialButton btnCopy  = v.findViewById(R.id.btn_copy_logs);
@@ -85,6 +110,31 @@ public class LogsFragment extends Fragment
         eventAdapter = new EventAdapter(requireContext());
         rvEvents.setLayoutManager(new LinearLayoutManager(requireContext()));
         rvEvents.setAdapter(eventAdapter);
+
+        // Smart-scroll: only stick to bottom when the user is actually
+        // looking at the bottom. The moment they scroll up to read older
+        // entries, we stop snapping the viewport back under them. They
+        // re-arm the sticky behavior just by scrolling all the way back.
+        rvLogs.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+                // canScrollVertically(1) == false  ⇒  at the bottom edge.
+                logsStickToBottom = !rv.canScrollVertically(1);
+            }
+        });
+        rvEvents.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+                eventsStickToBottom = !rv.canScrollVertically(1);
+            }
+        });
+
+        // Auto-fetch toggle: drives a periodic get_log_buffer cmd so the
+        // viewer stays warm without the user pressing Fetch every minute.
+        swAutoFetch.setOnCheckedChangeListener((b, on) -> {
+            autoFetchHandler.removeCallbacks(autoFetchTick);
+            if (on) autoFetchHandler.postDelayed(autoFetchTick, 500);
+        });
 
         // Load existing buffers
         adapter.setEntries(mqtt.getLogBuffer());
@@ -242,6 +292,7 @@ public class LogsFragment extends Fragment
     public void onDestroyView() {
         mqtt.removeLogListener(this);
         eventLogger.removeEventListener(this);
+        autoFetchHandler.removeCallbacks(autoFetchTick);
         if (logDiscoveryListener != null) {
             mqtt.removeDiscoveryListener(logDiscoveryListener);
             logDiscoveryListener = null;
@@ -255,7 +306,9 @@ public class LogsFragment extends Fragment
         adapter.addEntry(entry);
         updateCount();
         if (rvLogs.getVisibility() == View.VISIBLE
-                && swAutoScroll.isChecked() && adapter.getItemCount() > 0) {
+                && swAutoScroll.isChecked()
+                && logsStickToBottom
+                && adapter.getItemCount() > 0) {
             rvLogs.scrollToPosition(adapter.getItemCount() - 1);
         }
     }
@@ -266,7 +319,9 @@ public class LogsFragment extends Fragment
         eventAdapter.addEntry(e);
         updateCount();
         if (rvEvents.getVisibility() == View.VISIBLE
-                && swAutoScroll.isChecked() && eventAdapter.getItemCount() > 0) {
+                && swAutoScroll.isChecked()
+                && eventsStickToBottom
+                && eventAdapter.getItemCount() > 0) {
             rvEvents.scrollToPosition(eventAdapter.getItemCount() - 1);
         }
     }

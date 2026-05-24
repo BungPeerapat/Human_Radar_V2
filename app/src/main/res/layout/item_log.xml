@@ -1,33 +1,104 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Two-line log row: meta row (timestamp + level + tag + device) on top,
+     full message below. Left edge gets a 3 dp colored stripe matching the
+     level so the eye can scan severity at a glance without re-reading. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
-    android:paddingVertical="2dp">
+    android:paddingVertical="3dp"
+    android:paddingHorizontal="2dp">
 
-    <TextView
-        android:id="@+id/tv_log_level"
-        android:layout_width="48dp"
-        android:layout_height="wrap_content"
-        android:textSize="10sp"
-        android:fontFamily="monospace"
-        android:textColor="@color/radar_green" />
+    <View
+        android:id="@+id/v_log_stripe"
+        android:layout_width="3dp"
+        android:layout_height="match_parent"
+        android:background="@color/radar_green"
+        android:layout_marginEnd="6dp" />
 
-    <TextView
-        android:id="@+id/tv_log_tag"
-        android:layout_width="56dp"
-        android:layout_height="wrap_content"
-        android:textSize="10sp"
-        android:fontFamily="monospace"
-        android:textColor="@color/radar_blue" />
-
-    <TextView
-        android:id="@+id/tv_log_msg"
+    <LinearLayout
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:textSize="10sp"
-        android:fontFamily="monospace"
-        android:textColor="@color/radar_text" />
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
 
+        <!-- Meta line: timestamp · LEVEL · tag · device -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:baselineAligned="false">
+
+            <TextView
+                android:id="@+id/tv_log_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="00:00:00"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:textColor="@color/radar_text_dim"
+                android:layout_marginEnd="6dp" />
+
+            <TextView
+                android:id="@+id/tv_log_level"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="INFO"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:textColor="@color/radar_bg"
+                android:background="@color/radar_green"
+                android:paddingHorizontal="4dp"
+                android:paddingVertical="0dp"
+                android:minWidth="40dp"
+                android:gravity="center"
+                android:layout_marginEnd="6dp" />
+
+            <TextView
+                android:id="@+id/tv_log_tag"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textSize="10sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:textColor="@color/radar_blue"
+                android:layout_marginEnd="6dp"
+                android:singleLine="true"
+                android:ellipsize="end"
+                android:maxWidth="120dp" />
+
+            <TextView
+                android:id="@+id/tv_log_device"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:textColor="@color/radar_text_dim"
+                android:singleLine="true"
+                android:ellipsize="middle"
+                android:gravity="end" />
+        </LinearLayout>
+
+        <!-- Message line: wraps to new lines as needed -->
+        <TextView
+            android:id="@+id/tv_log_msg"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:textColor="@color/white"
+            android:paddingTop="1dp" />
+
+        <!-- Optional bottom line: heap / uptime when the ESP reports them -->
+        <TextView
+            android:id="@+id/tv_log_meta"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="9sp"
+            android:fontFamily="monospace"
+            android:textColor="@color/radar_text_dim"
+            android:visibility="gone" />
+    </LinearLayout>
 </LinearLayout>

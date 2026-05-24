@@ -35,66 +35,80 @@
             style="@style/Widget.Material3.Button.OutlinedButton" />
     </com.google.android.material.button.MaterialButtonToggleGroup>
 
-    <!-- Controls -->
+    <!-- Title row -->
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ESP32 Log Viewer"
+        android:textColor="@color/radar_blue"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="6dp" />
+
+    <!-- Action row: equal-weight buttons so nothing clips on narrow screens. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginBottom="8dp"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="ESP32 Log Viewer"
-            android:textColor="@color/radar_blue"
-            android:textSize="14sp"
-            android:textStyle="bold" />
+        android:layout_marginBottom="8dp">
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_fetch_logs"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:text="Fetch"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:layout_marginEnd="4dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingHorizontal="6dp"
             style="@style/Widget.Material3.Button.TonalButton" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_copy_logs"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:text="Copy"
-            android:textSize="12sp"
-            android:layout_marginStart="4dp"
-            app:icon="@android:drawable/ic_menu_save"
-            app:iconSize="14dp"
-            app:iconPadding="2dp"
+            android:textSize="11sp"
+            android:layout_marginEnd="4dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingHorizontal="6dp"
             style="@style/Widget.Material3.Button.TonalButton" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_share_logs"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:text="Share"
-            android:textSize="12sp"
-            android:layout_marginStart="4dp"
-            app:icon="@android:drawable/ic_menu_share"
-            app:iconSize="14dp"
-            app:iconPadding="2dp"
+            android:textSize="11sp"
+            android:layout_marginEnd="4dp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingHorizontal="6dp"
             style="@style/Widget.Material3.Button.TonalButton" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btn_clear_logs"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
+            android:layout_weight="1"
             android:layout_height="wrap_content"
             android:text="Clear"
-            android:textSize="12sp"
-            android:layout_marginStart="4dp"
+            android:textSize="11sp"
+            android:minHeight="36dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:paddingHorizontal="6dp"
             style="@style/Widget.Material3.Button.TonalButton" />
     </LinearLayout>
 
-    <!-- Auto-scroll toggle -->
+    <!-- Auto-scroll + Auto-fetch toggles -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -107,14 +121,27 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:checked="true" />
-
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="Auto-scroll"
             android:textColor="@color/radar_text_dim"
-            android:textSize="12sp"
-            android:layout_marginStart="8dp" />
+            android:textSize="11sp"
+            android:layout_marginStart="6dp"
+            android:layout_marginEnd="14dp" />
+
+        <com.google.android.material.materialswitch.MaterialSwitch
+            android:id="@+id/sw_auto_fetch"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:checked="false" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Auto-fetch"
+            android:textColor="@color/radar_text_dim"
+            android:textSize="11sp"
+            android:layout_marginStart="6dp" />
 
         <TextView
             android:id="@+id/tv_log_count"
@@ -123,7 +150,7 @@
             android:layout_weight="1"
             android:text="0 entries"
             android:textColor="@color/radar_text_dim"
-            android:textSize="12sp"
+            android:textSize="11sp"
             android:gravity="end" />
     </LinearLayout>
 

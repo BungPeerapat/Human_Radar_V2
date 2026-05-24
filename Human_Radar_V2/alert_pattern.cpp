@@ -127,7 +127,7 @@ void AlertPattern::startPatternFor_(uint8_t prev, uint8_t now) {
 void AlertPattern::onFirmwareUpdateStart() {
     fwUpdateMode_    = FwUpdateMode::InProgress;
     fwUpdateStartMs_ = millis();
-    Log::info(TAG, "OTA heartbeat started (1s/1s, indefinite)");
+    Log::info(TAG, "OTA heartbeat started (250ms on / 1250ms off, indefinite)");
 }
 
 void AlertPattern::onFirmwareUpdateFinish() {
@@ -137,8 +137,11 @@ void AlertPattern::onFirmwareUpdateFinish() {
 }
 
 namespace {
-constexpr uint32_t OTA_HEARTBEAT_PERIOD = 2000;  // 1s on / 1s off
-constexpr uint32_t OTA_HEARTBEAT_ON     = 1000;
+// OTA "I'm receiving firmware" heartbeat: short pulse every 1.5 s. The
+// short pulse pattern is more recognisable than a 50% duty 1s/1s blink —
+// the operator can tell at a glance the chip is mid-OTA, not just idle.
+constexpr uint32_t OTA_HEARTBEAT_PERIOD = 1500;  // 250ms on / 1250ms off
+constexpr uint32_t OTA_HEARTBEAT_ON     = 250;
 constexpr uint32_t OTA_FINISH_CYCLES    = 4;
 constexpr uint32_t OTA_FINISH_PERIOD    = 500;   // 0.25s on + 0.25s off
 constexpr uint32_t OTA_FINISH_ON        = 250;
