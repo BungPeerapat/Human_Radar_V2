@@ -94,6 +94,21 @@
                     android:maxWidth="220dp" />
 
                 <TextView
+                    android:id="@+id/active_device_fw"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="@color/radar_blue"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:fontFamily="monospace"
+                    android:background="@color/radar_input_bg"
+                    android:paddingHorizontal="5dp"
+                    android:paddingVertical="1dp"
+                    android:layout_marginStart="6dp"
+                    android:visibility="gone" />
+
+                <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text=" ▾"

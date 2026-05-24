@@ -71,7 +71,7 @@ public class RadarFragment extends Fragment
     private View replayBadge;
     private TextView replayBadgeDetail;
     private View activeDeviceChip;
-    private TextView activeDeviceName, activeDeviceDot;
+    private TextView activeDeviceName, activeDeviceDot, activeDeviceFw;
     private ImageButton btnKeepScreenOn, btnManualRotate, btnLockOrientation, btnNightMode, btnSnapshot;
     private ImageButton btnMultiDevice;
     private static final String PREFS_RADAR = "radar_multi_device";
@@ -125,6 +125,7 @@ public class RadarFragment extends Fragment
         activeDeviceChip  = v.findViewById(R.id.active_device_chip);
         activeDeviceName  = v.findViewById(R.id.active_device_name);
         activeDeviceDot   = v.findViewById(R.id.active_device_dot);
+        activeDeviceFw    = v.findViewById(R.id.active_device_fw);
         if (btnMultiDevice != null) {
             btnMultiDevice.setOnClickListener(view -> openMultiDevicePicker());
         }
@@ -203,6 +204,28 @@ public class RadarFragment extends Fragment
         activeDeviceDot.setText(online ? "●" : "○");
         activeDeviceDot.setTextColor(getColor(
                 online ? R.color.radar_green : R.color.radar_red));
+
+        // Firmware version chip — pulled from the active device's last seen
+        // humanradar/<name>/info MQTT message. Hidden until we know it so
+        // the chip doesn't flicker "(unknown)" on first launch.
+        if (activeDeviceFw != null) {
+            String fw = "";
+            if (name != null && !name.isEmpty()) {
+                for (MqttService.DiscoveredDevice d : mqtt.getDiscoveredDevices()) {
+                    if (d != null && name.equals(d.deviceName)
+                            && d.fw != null && !d.fw.isEmpty()) {
+                        fw = d.fw;
+                        break;
+                    }
+                }
+            }
+            if (fw.isEmpty()) {
+                activeDeviceFw.setVisibility(View.GONE);
+            } else {
+                activeDeviceFw.setText("v" + fw);
+                activeDeviceFw.setVisibility(View.VISIBLE);
+            }
+        }
     }
 
     // ───────────────────────── Multi-device overlay ─────────────────────────
@@ -383,6 +406,13 @@ public class RadarFragment extends Fragment
     public void onDeviceDiscovered(String deviceName, String status, long lastSeenMs) {
         if (!isAdded()) return;
         if (deviceName == null || deviceName.isEmpty()) return;
+        // Discovery fires whenever /info or /status is republished — refresh
+        // the chip so a fresh fw version shows up immediately after OTA
+        // without waiting for a status change.
+        String active = mqtt.getDeviceName();
+        if (active != null && active.equals(deviceName)) {
+            refreshActiveDeviceChip();
+        }
         boolean isOffline = "offline".equalsIgnoreCase(status)
                 || "removed".equalsIgnoreCase(status);
         if (!isOffline) return;
@@ -401,7 +431,6 @@ public class RadarFragment extends Fragment
                     .apply();
         }
         // If it's the primary too, clear the main layer.
-        String active = mqtt.getDeviceName();
         if (deviceName.equals(active)) {
             radarView.clearTargets();
             lastFrameMs = 0;

@@ -246,6 +246,12 @@ public class DashboardFragment extends Fragment
         refreshDeviceHub();
         refreshDeviceNameDropdown();
         maybeSuggestSwitch();
+        // /info just arrived with a (possibly new) fw — refresh the status
+        // line so the version chip updates without waiting for /status.
+        String active = mqtt.getDeviceName();
+        if (active != null && active.equals(deviceName)) {
+            onDeviceStatus(mqtt.getDeviceStatus());
+        }
     }
 
     /** Pull every project-namespaced device from MqttService and load them
@@ -821,7 +827,22 @@ public class DashboardFragment extends Fragment
     @Override
     public void onDeviceStatus(String status) {
         if (!isAdded()) return;
-        tvDeviceStatus.setText(status);
+        // Append the device's known firmware version when we have one.
+        // Format: "online · v1.0.52" — keeps the status line compact while
+        // surfacing fw at all times so the user doesn't need to dig into
+        // the hub or long-press details to see what version they're on.
+        String suffix = "";
+        String name = mqtt.getDeviceName();
+        if (name != null && !name.isEmpty()) {
+            for (MqttService.DiscoveredDevice d : mqtt.getDiscoveredDevices()) {
+                if (d != null && name.equals(d.deviceName)
+                        && d.fw != null && !d.fw.isEmpty()) {
+                    suffix = "  ·  v" + d.fw;
+                    break;
+                }
+            }
+        }
+        tvDeviceStatus.setText(status + suffix);
         tvDeviceStatus.setTextColor("online".equals(status) ?
                 getColor(R.color.radar_green) : getColor(R.color.radar_red));
         // Active device may have just changed, or a status flipped — refresh
