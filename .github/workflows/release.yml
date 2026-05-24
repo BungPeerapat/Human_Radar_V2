@@ -73,6 +73,25 @@ jobs:
           echo "FIRMWARE_SHA256=$(sha256sum "$DEST_FW" | awk '{print $1}')" >> "$GITHUB_ENV"
           echo "Built firmware: $DEST_FW ($(stat -c %s "$DEST_FW") bytes)"
 
+      - name: Build ESP32 BRIDGE firmware
+        env:
+          # The bridge is an OTA-only minimal binary — see bridge/platformio.ini
+          # for what's stripped. Stamped with the same tag + "-bridge" suffix.
+          PLATFORMIO_BUILD_FLAGS: -DFW_VERSION=\"${{ steps.version.outputs.version_name }}-bridge\"
+        run: |
+          pio run -d bridge
+          BR_BIN=$(find bridge/.pio/build -name 'firmware.bin' | head -n1)
+          if [ -z "$BR_BIN" ]; then
+            echo "::warning::No bridge firmware.bin produced — skipping"
+          else
+            DEST_BR="bridge-v${{ steps.version.outputs.version_name }}.bin"
+            cp "$BR_BIN" "$DEST_BR"
+            echo "BRIDGE_BIN=$DEST_BR" >> "$GITHUB_ENV"
+            echo "BRIDGE_SIZE=$(stat -c %s "$DEST_BR")" >> "$GITHUB_ENV"
+            echo "BRIDGE_SHA256=$(sha256sum "$DEST_BR" | awk '{print $1}')" >> "$GITHUB_ENV"
+            echo "Built bridge: $DEST_BR ($(stat -c %s "$DEST_BR") bytes)"
+          fi
+
       - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -230,6 +249,24 @@ jobs:
           EOF
           cat firmware.json
 
+      - name: Generate bridge manifest
+        if: env.BRIDGE_BIN != ''
+        run: |
+          REPO="${GITHUB_REPOSITORY}"
+          TAG="${{ steps.version.outputs.version_name }}"
+          cat > bridge.json <<EOF
+          {
+            "versionName": "${{ steps.version.outputs.version_name }}-bridge",
+            "versionCode": ${{ steps.version.outputs.version_code }},
+            "binUrl": "https://github.com/${REPO}/releases/download/v${TAG}/${BRIDGE_BIN}",
+            "sha256": "${BRIDGE_SHA256}",
+            "sizeBytes": ${BRIDGE_SIZE},
+            "releaseNotes": "Minimal OTA-only bridge firmware. Use this if normal OTA keeps rolling back — once installed, pull the full firmware via MQTT ota_pull cmd. All NVS settings (WiFi, MQTT, alerts, zones) survive.",
+            "publishedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          cat bridge.json
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -241,6 +278,8 @@ jobs:
             update.json
             ${{ env.FIRMWARE_BIN }}
             firmware.json
+            ${{ env.BRIDGE_BIN }}
+            bridge.json
           fail_on_unmatched_files: false
 
       - name: Verify manifest URL

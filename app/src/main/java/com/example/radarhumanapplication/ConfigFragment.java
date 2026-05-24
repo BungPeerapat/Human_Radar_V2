@@ -921,31 +921,68 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
             final com.example.radarhumanapplication.update.FirmwareManifest manifest,
             final String ip, final String label, final String actualFw) {
         if (!isAdded()) return;
-        String body = "Device rebooted but came back running v" + actualFw
-                + " — the new firmware v" + manifest.versionName + " was "
-                + "rejected and the chip rolled back to the previous partition.\n\n"
-                + "Common causes:\n"
-                + "  • file corruption during HTTP upload\n"
-                + "  • partition size mismatch\n"
-                + "  • signature / MD5 validation failed\n"
-                + "  • OTA endpoint bug in older firmware (≤ v1.0.30)\n\n"
-                + "What would you like to try?";
         boolean supportsMqttPull = com.example.radarhumanapplication.update.FirmwareUpdater
                 .compareFwVersion(actualFw, "1.0.48") >= 0;
+        String body = "Device rebooted but came back running v" + actualFw
+                + " — the new firmware v" + manifest.versionName + " was "
+                + "rejected and the chip rolled back.\n\n"
+                + "Best fix: install the smaller BRIDGE firmware first. It's "
+                + "OTA-only (no radar/web/alerts) but ~15% smaller so it "
+                + "usually uploads in one shot over noisy WiFi. Once the "
+                + "bridge is running, it pulls the full firmware directly "
+                + "from GitHub via MQTT — bypassing the WiFi upload problem "
+                + "entirely.\n\n"
+                + "All your NVS settings (WiFi, MQTT, alerts, zones) are "
+                + "preserved across both steps.";
         androidx.appcompat.app.AlertDialog.Builder b =
                 new androidx.appcompat.app.AlertDialog.Builder(requireContext())
                         .setTitle("⚠ OTA rejected — chip rolled back")
                         .setMessage(body)
-                        .setNeutralButton("Cancel", null);
+                        .setPositiveButton("Install bridge firmware",
+                                (d, w) -> startBridgeFirmwareInstall(ip, label));
         if (supportsMqttPull && mqtt.isConnected()) {
-            b.setPositiveButton("Retry via MQTT",
+            b.setNeutralButton("Retry via MQTT",
                     (d, w) -> startMqttFirmwareInstall(manifest, label));
         } else {
-            b.setPositiveButton("Retry HTTP",
+            b.setNeutralButton("Retry HTTP",
                     (d, w) -> doHttpFirmwareInstall(firmwareUpdater, manifest, ip, label));
         }
-        b.setNegativeButton("USB flash guide", (d, w) -> showUsbFlashGuide());
+        b.setNegativeButton("USB guide", (d, w) -> showUsbFlashGuide());
         b.show();
+    }
+
+    /**
+     * Fetch the bridge manifest from the latest release, then HTTP-push the
+     * smaller bridge .bin to the device. On success the bridge boots,
+     * reconnects MQTT, and the user can then issue ota_pull to fetch the
+     * full firmware from GitHub directly.
+     */
+    private void startBridgeFirmwareInstall(final String ip, final String label) {
+        if (!isAdded()) return;
+        btnFwCheck.setEnabled(false);
+        btnFwPick.setEnabled(false);
+        btnFwUpload.setEnabled(false);
+        showFwProgress("Fetching bridge manifest", 0);
+        setFwStatus("Looking up bridge firmware…", false);
+
+        final com.example.radarhumanapplication.update.FirmwareUpdater updater = firmwareUpdater;
+        // bridge.json lives next to firmware.json in the same GitHub Release.
+        // Replacing the filename in DEFAULT_MANIFEST_URL keeps the path
+        // logic in one place even if we move releases later.
+        String bridgeManifestUrl = com.example.radarhumanapplication.update.FirmwareUpdater
+                .DEFAULT_MANIFEST_URL.replace("firmware.json", "bridge.json");
+        updater.check(bridgeManifestUrl, null, (manifest, deviceVersion, error) -> {
+            if (!isAdded()) return;
+            if (manifest == null) {
+                hideFwProgress();
+                btnFwCheck.setEnabled(true);
+                btnFwPick.setEnabled(true);
+                btnFwUpload.setEnabled(pickedFirmwareUri != null);
+                setFwStatus("Bridge manifest unreachable: " + error, true);
+                return;
+            }
+            doHttpFirmwareInstall(updater, manifest, ip, label + " (bridge)");
+        });
     }
 
     private void showUsbFlashGuide() {
