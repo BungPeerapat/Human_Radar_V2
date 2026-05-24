@@ -783,22 +783,191 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnFwPick.setEnabled(false);
         btnFwUpload.setEnabled(false);
         showFwProgress("Probing " + ip, 0);
-        setFwStatus("Checking if " + ip + " is reachable on this network…", false);
+        setFwStatus("Fetching device info from " + ip + "…", false);
 
         final com.example.radarhumanapplication.update.FirmwareUpdater updater = firmwareUpdater;
-        // Pre-flight reachability check. If GET /api/version doesn't respond
-        // within 3 s, the HTTP push path won't work either — offer the user
-        // a one-tap MQTT-pull fallback instead of silently "succeeding"
-        // against an unreachable host.
-        updater.probeReachability(ip, currentFw -> {
+        // Pre-flight: fetch rich /api/info so the integrity panel can show
+        // free partition size, sketch MD5, heap, etc. /api/info is newer
+        // than /api/version — if it 404s, fall back to /api/version probe.
+        updater.fetchDeviceInfo(ip, (info, err) -> {
             if (!isAdded()) return;
-            if (currentFw == null) {
-                offerMqttFallbackOrCancel(manifest, ip, label);
+            if (info != null) {
+                showFirmwareIntegrityPanel(updater, manifest, ip, label, info);
                 return;
             }
-            // Reachable — proceed with HTTP push as before.
-            doHttpFirmwareInstall(updater, manifest, ip, label);
+            // /api/info not available — fall back to bare reachability probe.
+            updater.probeReachability(ip, currentFw -> {
+                if (!isAdded()) return;
+                if (currentFw == null) {
+                    offerMqttFallbackOrCancel(manifest, ip, label);
+                    return;
+                }
+                // Reachable but old firmware. Synthesize a partial DeviceInfo
+                // so the integrity panel still appears (without partition info).
+                com.example.radarhumanapplication.update.FirmwareUpdater.DeviceInfo partial =
+                        new com.example.radarhumanapplication.update.FirmwareUpdater
+                                .DeviceInfo(currentFw, ip, "", label,
+                                        0L, 0L, 0L, "", 0L, 0L);
+                showFirmwareIntegrityPanel(updater, manifest, ip, label, partial);
+            });
         });
+    }
+
+    /**
+     * Pre-upload integrity panel. Shows the .bin's expected SHA, the file
+     * size + ETA, the device's reported free OTA partition, and warns up-
+     * front if the .bin is too big to fit — instead of letting the upload
+     * complete and then silently rolling back to the previous partition.
+     *
+     * <p>If the device's current firmware supports {@code ota_pull}
+     * (v1.0.48+), this also auto-suggests using MQTT-pull as the default
+     * transport since it's more reliable than the HTTP-push path.
+     */
+    private void showFirmwareIntegrityPanel(
+            final com.example.radarhumanapplication.update.FirmwareUpdater updater,
+            final com.example.radarhumanapplication.update.FirmwareManifest manifest,
+            final String ip, final String label,
+            final com.example.radarhumanapplication.update.FirmwareUpdater.DeviceInfo info) {
+        if (!isAdded()) return;
+        hideFwProgress();
+        btnFwCheck.setEnabled(true);
+        btnFwPick.setEnabled(true);
+        btnFwUpload.setEnabled(pickedFirmwareUri != null);
+
+        long sizeBytes = manifest.sizeBytes > 0 ? manifest.sizeBytes : 0;
+        boolean partitionKnown = info.freeAppPartitionBytes > 0;
+        boolean fits = !partitionKnown || sizeBytes == 0
+                || sizeBytes <= info.freeAppPartitionBytes;
+        long etaSec = sizeBytes > 0 ? (sizeBytes / 150_000L) + 2 : 0; // ~150 KB/s rough est
+        boolean supportsMqttPull = com.example.radarhumanapplication.update.FirmwareUpdater
+                .compareFwVersion(info.fw, "1.0.48") >= 0;
+
+        StringBuilder body = new StringBuilder();
+        body.append("Target:   ").append(label.isEmpty() ? "(device)" : label)
+                .append("  @ ").append(ip).append('\n');
+        body.append("Current:  v").append(info.fw.isEmpty() ? "?" : info.fw).append('\n');
+        body.append("New:      v").append(manifest.versionName)
+                .append("  (").append(formatBytes(sizeBytes)).append(")\n");
+        if (etaSec > 0) {
+            body.append("ETA:      ~").append(etaSec).append("s over HTTP push\n");
+        }
+        body.append('\n');
+        if (manifest.sha256 != null && !manifest.sha256.isEmpty()) {
+            body.append("SHA-256:  ").append(shortHash(manifest.sha256)).append('\n');
+        }
+        if (!info.sketchMd5.isEmpty()) {
+            body.append("Running MD5: ").append(shortHash(info.sketchMd5)).append('\n');
+        }
+        if (partitionKnown) {
+            body.append("Free OTA slot: ").append(formatBytes(info.freeAppPartitionBytes))
+                    .append(fits ? "   ✅ fits" : "   ❌ TOO SMALL").append('\n');
+        }
+        if (info.totalHeap > 0) {
+            body.append("Device heap:   ")
+                    .append(info.freeHeap / 1024).append(" / ")
+                    .append(info.totalHeap / 1024).append(" KB\n");
+        }
+        body.append('\n');
+        if (!fits) {
+            body.append("⚠ The new firmware won't fit in this device's OTA slot.\n")
+                    .append("   Flash a smaller build, or reflash via USB.");
+        } else if (supportsMqttPull) {
+            body.append("✓ Device supports MQTT-pull (more reliable than HTTP push).");
+        } else {
+            body.append("ℹ This firmware predates MQTT-pull. HTTP push is the only option.");
+        }
+
+        androidx.appcompat.app.AlertDialog.Builder b =
+                new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                        .setTitle("Confirm firmware install")
+                        .setMessage(body.toString())
+                        .setNegativeButton("Cancel", null);
+        if (fits) {
+            String httpLabel = supportsMqttPull ? "HTTP push (legacy)" : "Install (HTTP)";
+            String mqttLabel = "Install via MQTT";
+            if (supportsMqttPull && mqtt.isConnected()) {
+                b.setPositiveButton(mqttLabel,
+                        (d, w) -> startMqttFirmwareInstall(manifest, label));
+                b.setNeutralButton(httpLabel,
+                        (d, w) -> doHttpFirmwareInstall(updater, manifest, ip, label));
+            } else {
+                b.setPositiveButton("Install (HTTP)",
+                        (d, w) -> doHttpFirmwareInstall(updater, manifest, ip, label));
+                if (mqtt.isConnected()) {
+                    b.setNeutralButton(mqttLabel,
+                            (d, w) -> startMqttFirmwareInstall(manifest, label));
+                }
+            }
+        }
+        b.show();
+    }
+
+    private static String formatBytes(long bytes) {
+        if (bytes <= 0) return "?";
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format(java.util.Locale.US,
+                "%.1f KB", bytes / 1024.0);
+        return String.format(java.util.Locale.US, "%.2f MB", bytes / 1024.0 / 1024.0);
+    }
+    private static String shortHash(String h) {
+        if (h == null || h.length() < 12) return h == null ? "" : h;
+        return h.substring(0, 8) + "…" + h.substring(h.length() - 4);
+    }
+
+    /** Dialog shown after we detect the device rolled back to its previous
+     *  firmware (verify came back with the OLD fw, not the manifest's). Offers
+     *  three escape hatches: retry HTTP, switch to MQTT-pull, USB flash guide. */
+    private void showRollbackRecoveryDialog(
+            final com.example.radarhumanapplication.update.FirmwareManifest manifest,
+            final String ip, final String label, final String actualFw) {
+        if (!isAdded()) return;
+        String body = "Device rebooted but came back running v" + actualFw
+                + " — the new firmware v" + manifest.versionName + " was "
+                + "rejected and the chip rolled back to the previous partition.\n\n"
+                + "Common causes:\n"
+                + "  • file corruption during HTTP upload\n"
+                + "  • partition size mismatch\n"
+                + "  • signature / MD5 validation failed\n"
+                + "  • OTA endpoint bug in older firmware (≤ v1.0.30)\n\n"
+                + "What would you like to try?";
+        boolean supportsMqttPull = com.example.radarhumanapplication.update.FirmwareUpdater
+                .compareFwVersion(actualFw, "1.0.48") >= 0;
+        androidx.appcompat.app.AlertDialog.Builder b =
+                new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                        .setTitle("⚠ OTA rejected — chip rolled back")
+                        .setMessage(body)
+                        .setNeutralButton("Cancel", null);
+        if (supportsMqttPull && mqtt.isConnected()) {
+            b.setPositiveButton("Retry via MQTT",
+                    (d, w) -> startMqttFirmwareInstall(manifest, label));
+        } else {
+            b.setPositiveButton("Retry HTTP",
+                    (d, w) -> doHttpFirmwareInstall(firmwareUpdater, manifest, ip, label));
+        }
+        b.setNegativeButton("USB flash guide", (d, w) -> showUsbFlashGuide());
+        b.show();
+    }
+
+    private void showUsbFlashGuide() {
+        if (!isAdded()) return;
+        new androidx.appcompat.app.AlertDialog.Builder(requireContext())
+                .setTitle("USB flash guide")
+                .setMessage("If OTA keeps rolling back, flash the firmware over USB once "
+                        + "to bridge to a known-good baseline (v1.0.48+ supports the "
+                        + "more reliable MQTT-pull OTA):\n\n"
+                        + "1. Plug ESP32 into your computer via USB.\n"
+                        + "2. From the project root run:\n"
+                        + "     pio run -d firmware -t upload --upload-port COM5\n"
+                        + "   (replace COM5 with the actual port from\n"
+                        + "    Device Manager / `pio device list`)\n\n"
+                        + "3. If 'wrong boot mode' appears: unplug USB, hold the\n"
+                        + "    BOOT button on the ESP32, plug USB back in, release\n"
+                        + "    the button, retry upload.\n\n"
+                        + "4. After it boots into the new firmware, all future\n"
+                        + "    updates can use MQTT-pull from this app — no USB\n"
+                        + "    cable needed.")
+                .setPositiveButton("OK", null)
+                .show();
     }
 
     /** Dialog: "ESP32 isn't reachable on HTTP — install via MQTT instead?"
@@ -903,8 +1072,8 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
 
     private void doHttpFirmwareInstall(
             final com.example.radarhumanapplication.update.FirmwareUpdater updater,
-            com.example.radarhumanapplication.update.FirmwareManifest manifest,
-            String ip, String label) {
+            final com.example.radarhumanapplication.update.FirmwareManifest manifest,
+            final String ip, final String label) {
         showFwProgress("Starting", 0);
         setFwStatus("Starting…", false);
         updater.install(manifest, ip,
@@ -976,8 +1145,31 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                         btnFwPick.setEnabled(true);
                         btnFwUpload.setEnabled(pickedFirmwareUri != null);
                         setFwStatus("Install failed: " + message, true);
+                        // FirmwareUpdater.verifyOnMqtt() tags rollback timeouts
+                        // with this exact phrase — pop the recovery dialog so
+                        // the user has next-step actions instead of dead-ending
+                        // on a red status line.
+                        String actualFw = extractRolledBackFw(message);
+                        if (actualFw != null) {
+                            showRollbackRecoveryDialog(manifest, ip, label, actualFw);
+                        }
                     }
                 });
+    }
+
+    /** Pull "fw=1.0.25" out of the verifyOnMqtt timeout message. */
+    private static String extractRolledBackFw(String message) {
+        if (message == null) return null;
+        int idx = message.indexOf("came back with fw=");
+        if (idx < 0) return null;
+        int start = idx + "came back with fw=".length();
+        int end = start;
+        while (end < message.length()) {
+            char c = message.charAt(end);
+            if (Character.isDigit(c) || c == '.') end++;
+            else break;
+        }
+        return end > start ? message.substring(start, end) : null;
     }
 
     // ------------------------------------------------------------------

@@ -240,6 +240,31 @@ void WebRadarServer::setupHTTP() {
         _http.send(200, "application/json", json);
     });
 
+    // Richer system info for pre-upload OTA integrity check.
+    _http.on("/api/info", HTTP_GET, [this]() {
+        const esp_partition_t* nextPart = esp_ota_get_next_update_partition(nullptr);
+        const esp_partition_t* runPart  = esp_ota_get_running_partition();
+        const DeviceConfig& cfg = configManager.get();
+        String md5 = ESP.getSketchMD5();
+        char json[512];
+        snprintf(json, sizeof(json),
+            "{\"fw\":\"%s\",\"ip\":\"%s\",\"mac\":\"%s\",\"name\":\"%s\","
+            "\"free_app_partition_bytes\":%u,\"running_partition_bytes\":%u,"
+            "\"sketch_size\":%u,\"sketch_md5\":\"%s\","
+            "\"free_heap\":%u,\"total_heap\":%u}",
+            FW_VERSION,
+            _ip.c_str(),
+            WiFi.macAddress().c_str(),
+            strlen(cfg.deviceName) > 0 ? cfg.deviceName : "HumanRadar",
+            nextPart ? (unsigned)nextPart->size : 0u,
+            runPart  ? (unsigned)runPart->size  : 0u,
+            (unsigned)ESP.getSketchSize(),
+            md5.c_str(),
+            (unsigned)ESP.getFreeHeap(),
+            (unsigned)ESP.getHeapSize());
+        _http.send(200, "application/json", json);
+    });
+
     // Battery monitor — assumes a voltage divider on GPIO34 (input-only). If
     // the user has no divider wired the reading is meaningless but the
     // endpoint stays useful for diagnostics ("can the chip read this pin?").

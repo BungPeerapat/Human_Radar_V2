@@ -86,6 +86,131 @@ public final class FirmwareUpdater {
     public static final long DEFAULT_MQTT_VERIFY_TIMEOUT_MS = 60_000;
 
     /**
+     * Pre-upload device snapshot from {@code GET /api/info}. Used by the
+     * integrity panel + size validation before starting an OTA write.
+     * Fields default to 0/"" when the device's firmware predates the
+     * endpoint (returns 404), letting the UI gracefully degrade.
+     */
+    public static final class DeviceInfo {
+        public final String fw;
+        public final String ip;
+        public final String mac;
+        public final String name;
+        public final long freeAppPartitionBytes;
+        public final long runningPartitionBytes;
+        public final long sketchSize;
+        public final String sketchMd5;
+        public final long freeHeap;
+        public final long totalHeap;
+
+        public DeviceInfo(String fw, String ip, String mac, String name,
+                          long freeAppPartitionBytes, long runningPartitionBytes,
+                          long sketchSize, String sketchMd5,
+                          long freeHeap, long totalHeap) {
+            this.fw = nz(fw); this.ip = nz(ip);
+            this.mac = nz(mac); this.name = nz(name);
+            this.freeAppPartitionBytes = freeAppPartitionBytes;
+            this.runningPartitionBytes = runningPartitionBytes;
+            this.sketchSize = sketchSize;
+            this.sketchMd5 = nz(sketchMd5);
+            this.freeHeap = freeHeap;
+            this.totalHeap = totalHeap;
+        }
+        private static String nz(String s) { return s == null ? "" : s; }
+    }
+
+    public interface DeviceInfoCallback {
+        /** {@code info} is null when the endpoint is unreachable or the
+         *  device's firmware is too old to support {@code /api/info}. */
+        void onDeviceInfo(DeviceInfo info, String error);
+    }
+
+    /** Fetch the device's rich info for the pre-upload integrity panel. */
+    public void fetchDeviceInfo(String deviceIp, DeviceInfoCallback cb) {
+        io.execute(() -> {
+            DeviceInfo info = null;
+            String err = null;
+            try {
+                String body = httpGet("http://" + deviceIp + "/api/info");
+                com.google.gson.JsonObject o = com.google.gson.JsonParser
+                        .parseString(body).getAsJsonObject();
+                info = new DeviceInfo(
+                        getStr(o, "fw"), getStr(o, "ip"),
+                        getStr(o, "mac"), getStr(o, "name"),
+                        getLong(o, "free_app_partition_bytes"),
+                        getLong(o, "running_partition_bytes"),
+                        getLong(o, "sketch_size"),
+                        getStr(o, "sketch_md5"),
+                        getLong(o, "free_heap"),
+                        getLong(o, "total_heap"));
+            } catch (Exception e) {
+                Log.w(TAG, "fetchDeviceInfo failed: " + e.getMessage());
+                err = e.getMessage();
+            }
+            final DeviceInfo finalInfo = info;
+            final String finalErr = err;
+            main.post(() -> cb.onDeviceInfo(finalInfo, finalErr));
+        });
+    }
+
+    private static String getStr(com.google.gson.JsonObject o, String k) {
+        try { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsString() : ""; }
+        catch (Exception e) { return ""; }
+    }
+    private static long getLong(com.google.gson.JsonObject o, String k) {
+        try { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsLong() : 0L; }
+        catch (Exception e) { return 0L; }
+    }
+
+    /**
+     * Compute SHA-256 of a local file (the .bin downloaded from GitHub
+     * Releases). Used by the integrity panel to show the user what's
+     * about to be sent vs the manifest's expected hash.
+     */
+    public static String sha256OfFile(java.io.File f) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-256");
+            try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+                byte[] buf = new byte[16 * 1024];
+                int n;
+                while ((n = in.read(buf)) > 0) md.update(buf, 0, n);
+            }
+            byte[] dig = md.digest();
+            StringBuilder sb = new StringBuilder(dig.length * 2);
+            for (byte b : dig) sb.append(String.format(java.util.Locale.US, "%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * Compare two semver-ish strings ("1.0.48"). Returns negative if a&lt;b,
+     * 0 if equal, positive if a&gt;b. Treats missing segments as 0 and
+     * ignores trailing non-numeric suffixes ("1.0.48-beta" → 1,0,48).
+     */
+    public static int compareFwVersion(String a, String b) {
+        int[] av = parseFw(a);
+        int[] bv = parseFw(b);
+        for (int i = 0; i < Math.max(av.length, bv.length); i++) {
+            int x = i < av.length ? av[i] : 0;
+            int y = i < bv.length ? bv[i] : 0;
+            if (x != y) return Integer.compare(x, y);
+        }
+        return 0;
+    }
+    private static int[] parseFw(String s) {
+        if (s == null) return new int[0];
+        String[] parts = s.split("[.\\-]");
+        int[] out = new int[parts.length];
+        for (int i = 0; i < parts.length; i++) {
+            try { out[i] = Integer.parseInt(parts[i]); }
+            catch (NumberFormatException e) { out[i] = 0; }
+        }
+        return out;
+    }
+
+    /**
      * Quick pre-flight reachability check. Hits {@code GET /api/version}
      * on the candidate IP with a short timeout and returns the parsed fw
      * version, or null if unreachable. Lets the install flow bail fast
