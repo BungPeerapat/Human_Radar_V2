@@ -43,7 +43,18 @@
         tools:targetApi="31">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density">
+            <!-- configChanges: handle rotation ourselves instead of recreating
+                 the activity. Recreation was racing with in-flight MQTT /
+                 mDNS / transport callbacks, and the layout-land variants for
+                 Dashboard / Radar are out of sync with newer feature IDs —
+                 both caused NPEs across every tab when rotating.
+
+                 Keeping the activity alive across rotation also preserves
+                 RadarView's accumulated trails, the connect form input,
+                 the active fragment, and the auto-fetch handler in Logs
+                 — no state lost when the user turns the phone. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
