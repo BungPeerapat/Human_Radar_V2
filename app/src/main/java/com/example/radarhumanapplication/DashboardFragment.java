@@ -133,26 +133,41 @@ public class DashboardFragment extends Fragment
         btnReplayOpen = v.findViewById(R.id.btn_replay_open);
 
         // Device Hub — Multi-device "no thinking" surface.
-        rvDeviceHub        = v.findViewById(R.id.rv_device_hub);
-        tvDeviceHubCount   = v.findViewById(R.id.tv_device_hub_count);
-        tvDeviceHubEmpty   = v.findViewById(R.id.tv_device_hub_empty);
+        // All of these IDs are present in the portrait layout but the
+        // landscape layout predates them; null-guard everything so a
+        // rotate to landscape doesn't crash with NullPointerException
+        // (and so any future layout drift just silently disables that
+        // sub-surface instead of taking the whole app down).
+        rvDeviceHub           = v.findViewById(R.id.rv_device_hub);
+        tvDeviceHubCount      = v.findViewById(R.id.tv_device_hub_count);
+        tvDeviceHubEmpty      = v.findViewById(R.id.tv_device_hub_empty);
         btnHealthCheckAll     = v.findViewById(R.id.btn_health_check_all);
         btnPurgeOffline       = v.findViewById(R.id.btn_purge_offline);
         btnTransportSettings  = v.findViewById(R.id.btn_transport_settings);
         tvTransportBadge      = v.findViewById(R.id.tv_transport_badge);
-        rvDeviceHub.setLayoutManager(new LinearLayoutManager(requireContext()));
-        deviceHubAdapter = new DeviceHubAdapter(requireContext(),
-                this::onDeviceHubTap,
-                this::onDeviceHubLongPress);
-        rvDeviceHub.setAdapter(deviceHubAdapter);
-        btnHealthCheckAll.setOnClickListener(x -> onHealthCheckAllClick());
-        btnPurgeOffline.setOnClickListener(x -> onPurgeOfflineClick());
-        btnTransportSettings.setOnClickListener(x ->
-                com.example.radarhumanapplication.transport.TransportSettingsDialog
-                        .show(getParentFragmentManager()));
-        tvTransportBadge.setOnClickListener(x ->
-                com.example.radarhumanapplication.transport.TransportSettingsDialog
-                        .show(getParentFragmentManager()));
+        if (rvDeviceHub != null) {
+            rvDeviceHub.setLayoutManager(new LinearLayoutManager(requireContext()));
+            deviceHubAdapter = new DeviceHubAdapter(requireContext(),
+                    this::onDeviceHubTap,
+                    this::onDeviceHubLongPress);
+            rvDeviceHub.setAdapter(deviceHubAdapter);
+        }
+        if (btnHealthCheckAll != null) {
+            btnHealthCheckAll.setOnClickListener(x -> onHealthCheckAllClick());
+        }
+        if (btnPurgeOffline != null) {
+            btnPurgeOffline.setOnClickListener(x -> onPurgeOfflineClick());
+        }
+        if (btnTransportSettings != null) {
+            btnTransportSettings.setOnClickListener(x ->
+                    com.example.radarhumanapplication.transport.TransportSettingsDialog
+                            .show(getParentFragmentManager()));
+        }
+        if (tvTransportBadge != null) {
+            tvTransportBadge.setOnClickListener(x ->
+                    com.example.radarhumanapplication.transport.TransportSettingsDialog
+                            .show(getParentFragmentManager()));
+        }
         refreshTransportBadge();
         // Device-name dropdown: backing adapter that's refreshed every time the
         // discovery feed changes. Tap the field (threshold=0) to see the list.
@@ -333,14 +348,19 @@ public class DashboardFragment extends Fragment
     }
 
     private void refreshDeviceHub() {
-        if (deviceHubAdapter == null) return;
+        // No hub on this layout (landscape) — skip the whole refresh.
+        if (deviceHubAdapter == null || rvDeviceHub == null) return;
         List<MqttService.DiscoveredDevice> snap = mqtt.getDiscoveredDevices();
         java.util.Set<String> pinned = loadPinnedDevices();
         deviceHubAdapter.setEntries(snap, mqtt.getDeviceName(), pinned);
-        tvDeviceHubCount.setText(String.format(Locale.US, "%d device%s",
-                snap.size(), snap.size() == 1 ? "" : "s"));
+        if (tvDeviceHubCount != null) {
+            tvDeviceHubCount.setText(String.format(Locale.US, "%d device%s",
+                    snap.size(), snap.size() == 1 ? "" : "s"));
+        }
         boolean empty = snap.isEmpty();
-        tvDeviceHubEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
+        if (tvDeviceHubEmpty != null) {
+            tvDeviceHubEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
+        }
         rvDeviceHub.setVisibility(empty ? View.GONE : View.VISIBLE);
     }
 
