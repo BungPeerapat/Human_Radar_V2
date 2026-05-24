@@ -20,12 +20,21 @@ public class WavAlertSound implements AlertSoundSource {
     private static final String TAG = "WavAlertSound";
 
     private final Context appContext;
+    private final AlertPatternConfig.Routing routing;
     private MediaPlayer shortMp;
     private MediaPlayer longMp;
     private float volume = 1f;
 
+    /** Default constructor keeps the historical NOTIFICATION routing so old
+     *  callers don't surprise-change behavior. */
     public WavAlertSound(Context ctx, int volumePct, String shortUri, String longUri) {
+        this(ctx, volumePct, shortUri, longUri, AlertPatternConfig.Routing.NOTIFICATION);
+    }
+
+    public WavAlertSound(Context ctx, int volumePct, String shortUri, String longUri,
+                         AlertPatternConfig.Routing routing) {
         this.appContext = ctx.getApplicationContext();
+        this.routing    = routing == null ? AlertPatternConfig.Routing.NOTIFICATION : routing;
         setVolume(volumePct);
         shortMp = prepare(shortUri);
         longMp  = prepare(longUri);
@@ -53,8 +62,15 @@ public class WavAlertSound implements AlertSoundSource {
         if (TextUtils.isEmpty(uriString)) return null;
         try {
             MediaPlayer mp = new MediaPlayer();
+            // Honor the user-chosen routing: NOTIFICATION respects headphones
+            // (the default — sound goes only to whatever output is active),
+            // ALARM forces Android to play through speaker + headphones at
+            // the same time so the alert can't be muted by plugging in.
+            int usage = (routing == AlertPatternConfig.Routing.ALARM)
+                    ? AudioAttributes.USAGE_ALARM
+                    : AudioAttributes.USAGE_NOTIFICATION_EVENT;
             mp.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setUsage(usage)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build());
             mp.setDataSource(appContext, Uri.parse(uriString));

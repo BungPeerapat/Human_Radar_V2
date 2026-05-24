@@ -20,6 +20,12 @@ public final class AlertPatternConfig {
     /** Mobile-only knobs (not persisted on the device). */
     public SoundType soundType = SoundType.TONE;
     public int       volumePct = 100;       // 0..100
+    /** How the alert audio is routed when headphones / Bluetooth are
+     *  connected. Default NOTIFICATION → routes only to the connected
+     *  output device, same as a normal chat notification. ALARM →
+     *  Android plays through speaker AND any connected output at the
+     *  same time so it can't be muted by plugging in headphones. */
+    public Routing routing = Routing.NOTIFICATION;
 
     /** content:// URIs for the user-picked short/long clips (WAV mode). */
     public String shortSoundUri = "";
@@ -29,6 +35,16 @@ public final class AlertPatternConfig {
         TONE,    // ToneGenerator beep
         WAV,     // bundled res/raw beep_short / beep_long
         TTS      // spoken count ("1 target", "2 targets")
+    }
+
+    public enum Routing {
+        /** USAGE_NOTIFICATION / STREAM_NOTIFICATION — respects headphone
+         *  routing. Plug in headphones, sound only goes to headphones. */
+        NOTIFICATION,
+        /** USAGE_ALARM / STREAM_ALARM — Android forces playback through
+         *  both the speaker and any connected output. Use when the alert
+         *  is safety-critical and must not be silenced by accident. */
+        ALARM
     }
 
     public AlertPatternConfig copy() {
@@ -42,6 +58,7 @@ public final class AlertPatternConfig {
         c.maxRangeMm     = maxRangeMm;
         c.soundType      = soundType;
         c.volumePct      = volumePct;
+        c.routing        = routing;
         c.shortSoundUri  = shortSoundUri;
         c.longSoundUri   = longSoundUri;
         return c;

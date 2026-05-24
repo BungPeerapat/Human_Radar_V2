@@ -356,6 +356,58 @@
                 android:value="100"
                 android:layout_marginBottom="8dp" />
 
+            <!-- Audio routing picker. NOTIFICATION (default) plays through
+                 whatever output is connected — headphones plugged in =
+                 sound only in headphones. ALARM forces Android to play
+                 through speaker AND any connected output at the same time
+                 (matches an alarm clock) so it can't be silenced by
+                 plugging in headphones. -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Audio routing"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:layout_marginTop="4dp" />
+
+            <RadioGroup
+                android:id="@+id/alert_routing_group"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:layout_marginBottom="8dp">
+
+                <RadioButton
+                    android:id="@+id/alert_routing_notification"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="🎧  Follow headphones (notification)"
+                    android:textSize="13sp"
+                    android:checked="true" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Default. Plug in headphones → sound only in headphones."
+                    android:textSize="11sp"
+                    android:textColor="@color/radar_text_dim"
+                    android:paddingStart="32dp"
+                    android:layout_marginBottom="4dp" />
+
+                <RadioButton
+                    android:id="@+id/alert_routing_alarm"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="🔔  Force speaker + headphones (alarm)"
+                    android:textSize="13sp" />
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Plays out of both at once — can't be silenced by plugging in headphones."
+                    android:textSize="11sp"
+                    android:textColor="@color/radar_text_dim"
+                    android:paddingStart="32dp" />
+            </RadioGroup>
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

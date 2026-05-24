@@ -177,11 +177,18 @@ public class AlertPatternPlayer {
     }
 
     private AlertSoundSource buildSound(AlertPatternConfig c) {
+        // Map the user's routing choice to the AudioManager stream the
+        // sound source should target. NOTIFICATION respects headphone
+        // routing (default); ALARM forces speaker+headphones at once.
+        int stream = (c.routing == AlertPatternConfig.Routing.ALARM)
+                ? AudioManager.STREAM_ALARM
+                : AudioManager.STREAM_NOTIFICATION;
         switch (c.soundType) {
-            case WAV:  return new WavAlertSound(appContext, c.volumePct, c.shortSoundUri, c.longSoundUri);
+            case WAV:  return new WavAlertSound(appContext, c.volumePct,
+                    c.shortSoundUri, c.longSoundUri, c.routing);
             case TTS:  return new TtsAlertSound(appContext);
             case TONE:
-            default:   return new ToneAlertSound(c.volumePct, AudioManager.STREAM_ALARM);
+            default:   return new ToneAlertSound(c.volumePct, stream);
         }
     }
 

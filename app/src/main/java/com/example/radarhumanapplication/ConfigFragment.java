@@ -55,6 +55,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private TextInputEditText alertShortMs, alertLongMs, alertGapMs, alertDebounceMs, alertMaxRange, alertDeviceIp;
     private RadioGroup alertSoundType;
     private RadioButton alertSoundTone, alertSoundWav, alertSoundTts;
+    private RadioButton alertRoutingNotif, alertRoutingAlarm;
     private Slider alertVolume;
     private TextView alertVolumeLabel, alertStatus;
     private MaterialButton btnAlertFetch, btnAlertPush, btnAlertTestLocal, btnAlertTestRemote;
@@ -1125,10 +1126,12 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         alertMaxRange    = v.findViewById(R.id.alert_max_range);
         alertDeviceIp    = v.findViewById(R.id.alert_device_ip);
         alertSoundType   = v.findViewById(R.id.alert_sound_type);
-        alertSoundTone   = v.findViewById(R.id.alert_sound_tone);
-        alertSoundWav    = v.findViewById(R.id.alert_sound_wav);
-        alertSoundTts    = v.findViewById(R.id.alert_sound_tts);
-        alertVolume      = v.findViewById(R.id.alert_volume);
+        alertSoundTone     = v.findViewById(R.id.alert_sound_tone);
+        alertSoundWav      = v.findViewById(R.id.alert_sound_wav);
+        alertSoundTts      = v.findViewById(R.id.alert_sound_tts);
+        alertVolume        = v.findViewById(R.id.alert_volume);
+        alertRoutingNotif  = v.findViewById(R.id.alert_routing_notification);
+        alertRoutingAlarm  = v.findViewById(R.id.alert_routing_alarm);
         alertVolumeLabel = v.findViewById(R.id.alert_volume_label);
         alertStatus      = v.findViewById(R.id.alert_status);
         btnAlertFetch       = v.findViewById(R.id.btn_alert_fetch);
@@ -1271,6 +1274,8 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
             case TTS:  alertSoundTts.setChecked(true); break;
             case TONE: default: alertSoundTone.setChecked(true); break;
         }
+        if (c.routing == AlertPatternConfig.Routing.ALARM) alertRoutingAlarm.setChecked(true);
+        else                                               alertRoutingNotif.setChecked(true);
         pickedShortUri = c.shortSoundUri == null ? "" : c.shortSoundUri;
         pickedLongUri  = c.longSoundUri  == null ? "" : c.longSoundUri;
         alertShortUriLabel.setText("Short beep sound: "
@@ -1292,6 +1297,9 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         if (alertSoundWav.isChecked())      c.soundType = AlertPatternConfig.SoundType.WAV;
         else if (alertSoundTts.isChecked()) c.soundType = AlertPatternConfig.SoundType.TTS;
         else                                c.soundType = AlertPatternConfig.SoundType.TONE;
+        c.routing = alertRoutingAlarm != null && alertRoutingAlarm.isChecked()
+                ? AlertPatternConfig.Routing.ALARM
+                : AlertPatternConfig.Routing.NOTIFICATION;
         c.shortSoundUri = pickedShortUri;
         c.longSoundUri  = pickedLongUri;
         return c;
@@ -1462,6 +1470,9 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         catch (Exception ignored) { c.soundType = AlertPatternConfig.SoundType.TONE; }
         c.shortSoundUri  = p.getString("uri_short", "");
         c.longSoundUri   = p.getString("uri_long",  "");
+        String routing   = p.getString("routing", "NOTIFICATION");
+        try { c.routing = AlertPatternConfig.Routing.valueOf(routing); }
+        catch (Exception ignored) { c.routing = AlertPatternConfig.Routing.NOTIFICATION; }
         return c;
     }
 
@@ -1478,6 +1489,9 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                 .putString("st", c.soundType.name())
                 .putString("uri_short", c.shortSoundUri == null ? "" : c.shortSoundUri)
                 .putString("uri_long",  c.longSoundUri  == null ? "" : c.longSoundUri)
+                .putString("routing", (c.routing == null
+                        ? AlertPatternConfig.Routing.NOTIFICATION
+                        : c.routing).name())
                 .apply();
     }
 
