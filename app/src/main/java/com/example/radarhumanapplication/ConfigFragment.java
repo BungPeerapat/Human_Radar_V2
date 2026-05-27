@@ -41,13 +41,11 @@ import com.google.gson.JsonObject;
 
 public class ConfigFragment extends Fragment implements MqttService.ConfigAckListener {
 
-    private com.google.android.material.textfield.MaterialAutoCompleteTextView cfgDeviceName;
-    private TextInputEditText cfgPublishInterval, cfgUnmannedDelay, cfgTargetTimeout;
-    private android.widget.ArrayAdapter<String> cfgDeviceNameAdapter;
-    private MqttService.DiscoveryListener cfgDiscoveryListener;
-    private MaterialSwitch cfgMultiTarget;
-    private Slider cfgSensitivity;
-    private MaterialButton btnSendConfig, btnCheckUpdate;
+    // The legacy "Sensor Configuration" card (cfg_* IDs, MQTT-based) was
+    // removed in v1.0.56 — replaced by the HTTP-based "Sensor Behavior"
+    // card (sensor_* IDs) + "Detection Zones" dialog. btnCheckUpdate stays
+    // since it's part of the firmware OTA section, not the legacy card.
+    private MaterialButton btnCheckUpdate;
     private TextView tvConfigAck, tvAppVersion;
     private MqttService mqtt;
 
@@ -167,42 +165,13 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         super.onViewCreated(v, savedInstanceState);
         mqtt = MqttService.getInstance();
 
-        cfgDeviceName = v.findViewById(R.id.cfg_device_name);
-        cfgPublishInterval = v.findViewById(R.id.cfg_publish_interval);
-        cfgUnmannedDelay = v.findViewById(R.id.cfg_unmanned_delay);
-        cfgTargetTimeout = v.findViewById(R.id.cfg_target_timeout);
-        cfgMultiTarget = v.findViewById(R.id.cfg_multi_target);
-        cfgSensitivity = v.findViewById(R.id.cfg_sensitivity);
-        btnSendConfig = v.findViewById(R.id.btn_send_config);
         tvConfigAck = v.findViewById(R.id.tv_config_ack);
         btnCheckUpdate = v.findViewById(R.id.btn_check_update);
         tvAppVersion = v.findViewById(R.id.tv_app_version);
 
-        cfgDeviceName.setText(mqtt.getDeviceName());
-        // Populate the dropdown with MQTT-discovered device names and keep it in
-        // sync as more devices come online. The field is still editable so a
-        // brand-new install (no discoveries yet) can type a name manually.
-        cfgDeviceNameAdapter = new android.widget.ArrayAdapter<>(
-                requireContext(),
-                android.R.layout.simple_list_item_1,
-                collectDiscoveredDeviceNames());
-        cfgDeviceName.setAdapter(cfgDeviceNameAdapter);
-        // Force the dropdown to open on focus / tap of the arrow.
-        cfgDeviceName.setOnClickListener(view -> cfgDeviceName.showDropDown());
-        cfgDeviceName.setOnFocusChangeListener((view, has) -> {
-            if (has) cfgDeviceName.showDropDown();
-        });
-        cfgDiscoveryListener = (name, status, lastSeenMs) -> {
-            if (!isAdded() || cfgDeviceNameAdapter == null) return;
-            java.util.List<String> snap = collectDiscoveredDeviceNames();
-            cfgDeviceNameAdapter.clear();
-            cfgDeviceNameAdapter.addAll(snap);
-            cfgDeviceNameAdapter.notifyDataSetChanged();
-        };
-        mqtt.addDiscoveryListener(cfgDiscoveryListener);
-        tvAppVersion.setText("Current: v" + BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")");
+        tvAppVersion.setText("Current: v" + BuildConfig.VERSION_NAME
+                + " (" + BuildConfig.VERSION_CODE + ")");
 
-        btnSendConfig.setOnClickListener(this::onSendConfig);
         btnCheckUpdate.setOnClickListener(this::onCheckUpdate);
         mqtt.addConfigAckListener(this);
 
@@ -1985,55 +1954,16 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     @Override
     public void onDestroyView() {
         mqtt.removeConfigAckListener(this);
-        if (cfgDiscoveryListener != null) {
-            mqtt.removeDiscoveryListener(cfgDiscoveryListener);
-            cfgDiscoveryListener = null;
-        }
         try { wifiScanHelper.cancel(requireContext()); } catch (Exception ignored) {}
         alertHttp.shutdown();
         super.onDestroyView();
     }
 
-    /** Build a sorted snapshot of every device name we've seen on
-     *  humanradar/+/status. Empty list when no broker is connected yet. */
-    private java.util.List<String> collectDiscoveredDeviceNames() {
-        java.util.Set<String> set = new java.util.TreeSet<>();
-        for (MqttService.DiscoveredDevice d : mqtt.getDiscoveredDevices()) {
-            if (d != null && d.deviceName != null && !d.deviceName.isEmpty()) {
-                set.add(d.deviceName);
-            }
-        }
-        return new java.util.ArrayList<>(set);
-    }
-
-    private void onSendConfig(View v) {
-        if (!mqtt.isConnected()) {
-            Toast.makeText(requireContext(), "Not connected to MQTT", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        JsonObject config = new JsonObject();
-
-        String name = cfgDeviceName.getText() != null
-                ? cfgDeviceName.getText().toString().trim() : "";
-        if (!name.isEmpty()) config.addProperty("device_name", name);
-
-        int pubInt = parseInt(getText(cfgPublishInterval), -1);
-        if (pubInt >= 50 && pubInt <= 2000) config.addProperty("publish_interval_ms", pubInt);
-
-        int unmDly = parseInt(getText(cfgUnmannedDelay), -1);
-        if (unmDly >= 1000 && unmDly <= 60000) config.addProperty("unmanned_delay_ms", unmDly);
-
-        int tgtTout = parseInt(getText(cfgTargetTimeout), -1);
-        if (tgtTout >= 100 && tgtTout <= 10000) config.addProperty("target_timeout_ms", tgtTout);
-
-        config.addProperty("multi_target_mode", cfgMultiTarget.isChecked());
-        config.addProperty("sensitivity", (int) cfgSensitivity.getValue());
-
-        mqtt.sendConfig(config);
-        tvConfigAck.setText("Sending...");
-        tvConfigAck.setTextColor(requireContext().getColor(R.color.radar_yellow));
-    }
+    // collectDiscoveredDeviceNames() + onSendConfig() removed in v1.0.56.
+    // The legacy "Sensor Configuration" card that owned them was replaced
+    // by the HTTP-based Sensor Behavior card (sensor_* IDs) which uses
+    // AlertHttpClient.fetchDeviceConfig / postRawConfig against /api/config
+    // — same shape the firmware already validates with hasKey() partials.
 
     @Override
     public void onConfigAck(JsonObject ack) {

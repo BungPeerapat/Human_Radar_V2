@@ -432,6 +432,46 @@ void WebRadarServer::handleSaveConfig() {
         if (sn >= 0) configManager.setSensitivity((uint8_t)sn);
     }
 
+    // Detection zones — flat-key shape ("z0_en", "z0_x1", ...). The Android
+    // DetectionZonesDialog sends both nested (z0:{...}) and flat formats
+    // for forward compatibility; we parse flat because the indexOf-based
+    // JSON helper above can't descend into nested objects cleanly.
+    char zkey[12];
+    for (int i = 0; i < 3; i++) {
+        snprintf(zkey, sizeof(zkey), "z%d_en", i);
+        bool present = hasKey(zkey);
+        if (!present) {
+            for (const char* suffix : { "_x1", "_y1", "_x2", "_y2" }) {
+                snprintf(zkey, sizeof(zkey), "z%d%s", i, suffix);
+                if (hasKey(zkey)) { present = true; break; }
+            }
+        }
+        if (!present) continue;
+
+        const DetectionZone& cur = configManager.get().zones[i];
+        snprintf(zkey, sizeof(zkey), "z%d_en", i);
+        bool en = hasKey(zkey) ? (getJsonInt(zkey, cur.enabled ? 1 : 0) != 0)
+                               : cur.enabled;
+        snprintf(zkey, sizeof(zkey), "z%d_x1", i);
+        int x1 = hasKey(zkey) ? getJsonInt(zkey, cur.x1) : cur.x1;
+        snprintf(zkey, sizeof(zkey), "z%d_y1", i);
+        int y1 = hasKey(zkey) ? getJsonInt(zkey, cur.y1) : cur.y1;
+        snprintf(zkey, sizeof(zkey), "z%d_x2", i);
+        int x2 = hasKey(zkey) ? getJsonInt(zkey, cur.x2) : cur.x2;
+        snprintf(zkey, sizeof(zkey), "z%d_y2", i);
+        int y2 = hasKey(zkey) ? getJsonInt(zkey, cur.y2) : cur.y2;
+
+        auto clamp16 = [](int v) -> int16_t {
+            if (v >  32767) return  32767;
+            if (v < -32768) return -32768;
+            return (int16_t)v;
+        };
+        configManager.setZone(i, en,
+            clamp16(x1), clamp16(y1), clamp16(x2), clamp16(y2));
+        Log::info("Zone %d updated: en=%d (%d,%d)→(%d,%d)",
+                  i, en ? 1 : 0, x1, y1, x2, y2);
+    }
+
     _http.send(200, "application/json", "{\"ok\":true}");
 
     // Restart after short delay to apply new WiFi settings
