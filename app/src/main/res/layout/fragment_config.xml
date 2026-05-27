@@ -493,6 +493,161 @@
                 android:layout_marginTop="8dp" />
         </LinearLayout>
 
+        <!-- Sensor Behavior Card -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@color/radar_card"
+            android:padding="16dp"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sensor Behavior"
+                android:textColor="@color/radar_blue"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/sensor_pub_interval_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Publish interval: 100 ms"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sensor_pub_interval"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:valueFrom="50"
+                android:valueTo="2000"
+                android:stepSize="50"
+                android:value="100"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/sensor_unmanned_delay_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Unmanned delay: 5000 ms"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sensor_unmanned_delay"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:valueFrom="1000"
+                android:valueTo="60000"
+                android:stepSize="500"
+                android:value="5000"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/sensor_target_timeout_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Target timeout: 1000 ms"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sensor_target_timeout"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:valueFrom="100"
+                android:valueTo="10000"
+                android:stepSize="100"
+                android:value="1000"
+                android:layout_marginBottom="8dp" />
+
+            <TextView
+                android:id="@+id/sensor_sensitivity_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sensitivity: 5"
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp" />
+
+            <com.google.android.material.slider.Slider
+                android:id="@+id/sensor_sensitivity"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:valueFrom="0"
+                android:valueTo="9"
+                android:stepSize="1"
+                android:value="5"
+                android:layout_marginBottom="8dp" />
+
+            <RadioGroup
+                android:id="@+id/sensor_multi_target_group"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+                <RadioButton
+                    android:id="@+id/sensor_multi_target_single"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="Single target"
+                    android:textColor="@color/white" />
+                <RadioButton
+                    android:id="@+id/sensor_multi_target_multi"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="Multi target (up to 3)"
+                    android:textColor="@color/white"
+                    android:checked="true" />
+            </RadioGroup>
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/sensor_btn_edit_zones"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Edit detection zones…"
+                android:layout_marginBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="6dp">
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/sensor_btn_fetch"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="FETCH"
+                    android:layout_marginEnd="4dp" />
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/sensor_btn_push"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="PUSH"
+                    android:layout_marginStart="4dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/sensor_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="@color/radar_text_dim"
+                android:textSize="12sp"
+                android:gravity="center"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
+
         <!-- WiFi Setup Card -->
         <LinearLayout
             android:layout_width="match_parent"

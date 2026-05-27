@@ -27,6 +27,7 @@ import com.example.radarhumanapplication.alerts.DeviceStatusAlertManager;
 import com.example.radarhumanapplication.profiles.ConnectionProfile;
 import com.example.radarhumanapplication.profiles.DevicePickerDialog;
 import com.example.radarhumanapplication.profiles.ProfileManager;
+import com.example.radarhumanapplication.sensor.SensorConfig;
 import com.example.radarhumanapplication.update.FirmwareUploader;
 import com.google.android.material.progressindicator.LinearProgressIndicator;
 import com.example.radarhumanapplication.update.UpdateDialog;
@@ -79,6 +80,17 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private ActivityResultLauncher<String[]> pickLongLauncher;
     private final AlertHttpClient alertHttp = new AlertHttpClient();
     private static final String ALERT_PREFS = "alert_prefs";
+
+    // Sensor Behavior UI (publish interval / unmanned delay / target timeout /
+    // sensitivity / multi-target). Mirrors the alert card pattern but writes
+    // firmware short codes pi/ud/tt/sn/mt directly.
+    private Slider sensorPubInterval, sensorUnmannedDelay, sensorTargetTimeout, sensorSensitivity;
+    private TextView sensorPubIntervalLabel, sensorUnmannedDelayLabel,
+            sensorTargetTimeoutLabel, sensorSensitivityLabel, sensorStatus;
+    private RadioGroup sensorMultiTargetGroup;
+    private RadioButton sensorMultiTargetSingle, sensorMultiTargetMulti;
+    private MaterialButton btnSensorFetch, btnSensorPush, btnSensorEditZones;
+    private static final String SENSOR_PREFS = "sensor_prefs";
 
     // Device online/offline notification UI
     private MaterialSwitch devOnlineEnable, devOfflineEnable;
@@ -195,6 +207,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         mqtt.addConfigAckListener(this);
 
         bindAlertUi(v);
+        bindSensorUi(v);
         bindDeviceStatusAlertUi(v);
         bindFirmwareOtaUi(v);
         bindWifiSetupUi(v);
@@ -1721,6 +1734,199 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                 .putString("routing", (c.routing == null
                         ? AlertPatternConfig.Routing.NOTIFICATION
                         : c.routing).name())
+                .apply();
+    }
+
+    // ------------------------------------------------------------------
+    //  Sensor Behavior card (pi / ud / tt / sn / mt → ESP /api/config)
+    // ------------------------------------------------------------------
+    private void bindSensorUi(View v) {
+        sensorPubInterval        = v.findViewById(R.id.sensor_pub_interval);
+        sensorUnmannedDelay      = v.findViewById(R.id.sensor_unmanned_delay);
+        sensorTargetTimeout      = v.findViewById(R.id.sensor_target_timeout);
+        sensorSensitivity        = v.findViewById(R.id.sensor_sensitivity);
+        sensorPubIntervalLabel   = v.findViewById(R.id.sensor_pub_interval_label);
+        sensorUnmannedDelayLabel = v.findViewById(R.id.sensor_unmanned_delay_label);
+        sensorTargetTimeoutLabel = v.findViewById(R.id.sensor_target_timeout_label);
+        sensorSensitivityLabel   = v.findViewById(R.id.sensor_sensitivity_label);
+        sensorMultiTargetGroup   = v.findViewById(R.id.sensor_multi_target_group);
+        sensorMultiTargetSingle  = v.findViewById(R.id.sensor_multi_target_single);
+        sensorMultiTargetMulti   = v.findViewById(R.id.sensor_multi_target_multi);
+        btnSensorFetch           = v.findViewById(R.id.sensor_btn_fetch);
+        btnSensorPush            = v.findViewById(R.id.sensor_btn_push);
+        btnSensorEditZones       = v.findViewById(R.id.sensor_btn_edit_zones);
+        sensorStatus             = v.findViewById(R.id.sensor_status);
+
+        SensorConfig cfg = loadSensorPrefs();
+        applySensorCfgToUi(cfg);
+
+        // Live label updates as the user drags each slider.
+        sensorPubInterval.addOnChangeListener((s, value, fromUser) ->
+                sensorPubIntervalLabel.setText("Publish interval: " + (int) value + " ms"));
+        sensorUnmannedDelay.addOnChangeListener((s, value, fromUser) ->
+                sensorUnmannedDelayLabel.setText("Unmanned delay: " + (int) value + " ms"));
+        sensorTargetTimeout.addOnChangeListener((s, value, fromUser) ->
+                sensorTargetTimeoutLabel.setText("Target timeout: " + (int) value + " ms"));
+        sensorSensitivity.addOnChangeListener((s, value, fromUser) ->
+                sensorSensitivityLabel.setText("Sensitivity: " + (int) value));
+
+        btnSensorFetch.setOnClickListener(view -> onSensorFetch());
+        btnSensorPush.setOnClickListener(view -> onSensorPush());
+        btnSensorEditZones.setOnClickListener(view -> openDetectionZonesDialog());
+    }
+
+    /** Placeholder until Agent B's {@code DetectionZonesDialog} lands and replaces this stub. */
+    private void openDetectionZonesDialog() {
+        Toast.makeText(requireContext(),
+                "Detection Zones dialog — pending Agent B",
+                Toast.LENGTH_SHORT).show();
+    }
+
+    private void applySensorCfgToUi(SensorConfig c) {
+        sensorPubInterval.setValue(
+                clamp(c.publishIntervalMs, 50, 2000));
+        sensorUnmannedDelay.setValue(
+                clamp(c.unmannedDelayMs, 1000, 60000));
+        sensorTargetTimeout.setValue(
+                clamp(c.targetTimeoutMs, 100, 10000));
+        sensorSensitivity.setValue(
+                clamp(c.sensitivity, 0, 9));
+        sensorPubIntervalLabel.setText("Publish interval: " + (int) sensorPubInterval.getValue() + " ms");
+        sensorUnmannedDelayLabel.setText("Unmanned delay: " + (int) sensorUnmannedDelay.getValue() + " ms");
+        sensorTargetTimeoutLabel.setText("Target timeout: " + (int) sensorTargetTimeout.getValue() + " ms");
+        sensorSensitivityLabel.setText("Sensitivity: " + (int) sensorSensitivity.getValue());
+        if (c.multiTarget) sensorMultiTargetMulti.setChecked(true);
+        else               sensorMultiTargetSingle.setChecked(true);
+    }
+
+    private SensorConfig readSensorCfgFromUi() {
+        SensorConfig c = new SensorConfig();
+        // Sliders are already clamped to their valueFrom/valueTo bounds, but
+        // clamp anyway in case future XML drift relaxes the range.
+        c.publishIntervalMs = clamp((int) sensorPubInterval.getValue(), 50, 2000);
+        c.unmannedDelayMs   = clamp((int) sensorUnmannedDelay.getValue(), 1000, 60000);
+        c.targetTimeoutMs   = clamp((int) sensorTargetTimeout.getValue(), 100, 10000);
+        c.sensitivity       = clamp((int) sensorSensitivity.getValue(), 0, 9);
+        c.multiTarget       = sensorMultiTargetMulti != null && sensorMultiTargetMulti.isChecked();
+        return c;
+    }
+
+    private void onSensorFetch() {
+        // Reuse the same IP-resolution flow as the alert card: prefer the
+        // already-typed alertDeviceIp; else open DevicePickerDialog; else fall
+        // back to the AP/mDNS suggestions.
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            doSensorFetch(typedIp);
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Fetch sensor config from device", p -> {
+            if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                    alertDeviceIp.setText(ip);
+                    doSensorFetch(ip);
+                });
+                return;
+            }
+            alertDeviceIp.setText(p.espHttpIp);
+            doSensorFetch(p.espHttpIp);
+        });
+    }
+
+    private void doSensorFetch(String ip) {
+        setSensorStatus("Fetching sensor config from " + ip + "…", false);
+        alertHttp.fetchDeviceConfig(ip, (json, err) -> {
+            if (!isAdded()) return;
+            if (err != null || json == null) {
+                setSensorStatus("Fetch failed: "
+                        + (err == null ? "no response" : err), true);
+                return;
+            }
+            SensorConfig c = readSensorCfgFromUi();
+            try {
+                if (json.has("pi")) c.publishIntervalMs = json.get("pi").getAsInt();
+                if (json.has("ud")) c.unmannedDelayMs   = json.get("ud").getAsInt();
+                if (json.has("tt")) c.targetTimeoutMs   = json.get("tt").getAsInt();
+                if (json.has("sn")) c.sensitivity       = json.get("sn").getAsInt();
+                if (json.has("mt")) c.multiTarget       = json.get("mt").getAsInt() != 0;
+            } catch (Exception parseErr) {
+                setSensorStatus("Fetch parse failed: " + parseErr.getMessage(), true);
+                return;
+            }
+            applySensorCfgToUi(c);
+            saveSensorPrefs(c);
+            setSensorStatus("Fetched OK from " + ip, false);
+        });
+    }
+
+    private void onSensorPush() {
+        SensorConfig c = readSensorCfgFromUi();
+        saveSensorPrefs(c);
+        String typedIp = getText(alertDeviceIp);
+        if (!typedIp.isEmpty()) {
+            doSensorPush(typedIp, c);
+            return;
+        }
+        DevicePickerDialog.show(requireContext(), "Push sensor config to device", p -> {
+            if (p.espHttpIp == null || p.espHttpIp.isEmpty()) {
+                offerManualIpFallback(p.name == null ? "device" : p.name, ip -> {
+                    alertDeviceIp.setText(ip);
+                    doSensorPush(ip, c);
+                });
+                return;
+            }
+            alertDeviceIp.setText(p.espHttpIp);
+            doSensorPush(p.espHttpIp, c);
+        });
+    }
+
+    private void doSensorPush(String ip, SensorConfig c) {
+        setSensorStatus("Pushing sensor config to " + ip + "…", false);
+        JsonObject body = new JsonObject();
+        body.addProperty("pi", c.publishIntervalMs);
+        body.addProperty("ud", c.unmannedDelayMs);
+        body.addProperty("tt", c.targetTimeoutMs);
+        body.addProperty("sn", c.sensitivity);
+        body.addProperty("mt", c.multiTarget ? 1 : 0);
+        alertHttp.postRawConfig(ip, body, (ok, err) -> {
+            if (!isAdded()) return;
+            if (Boolean.TRUE.equals(ok)) {
+                setSensorStatus("Pushed OK to " + ip + " (device is restarting)", false);
+            } else {
+                setSensorStatus("Push failed: " + (err == null ? "unknown" : err), true);
+            }
+        });
+    }
+
+    private void setSensorStatus(String text, boolean error) {
+        if (sensorStatus == null) return;
+        sensorStatus.setText(text);
+        sensorStatus.setTextColor(requireContext().getColor(
+                error ? R.color.radar_red : R.color.radar_green));
+    }
+
+    private SharedPreferences sensorPrefs() {
+        return requireContext().getSharedPreferences(SENSOR_PREFS, 0);
+    }
+
+    private SensorConfig loadSensorPrefs() {
+        SharedPreferences p = sensorPrefs();
+        SensorConfig c = new SensorConfig();
+        c.publishIntervalMs = p.getInt("pi", c.publishIntervalMs);
+        c.unmannedDelayMs   = p.getInt("ud", c.unmannedDelayMs);
+        c.targetTimeoutMs   = p.getInt("tt", c.targetTimeoutMs);
+        c.sensitivity       = p.getInt("sn", c.sensitivity);
+        c.multiTarget       = p.getBoolean("mt", c.multiTarget);
+        return c;
+    }
+
+    private void saveSensorPrefs(SensorConfig c) {
+        sensorPrefs().edit()
+                .putInt("pi", c.publishIntervalMs)
+                .putInt("ud", c.unmannedDelayMs)
+                .putInt("tt", c.targetTimeoutMs)
+                .putInt("sn", c.sensitivity)
+                .putBoolean("mt", c.multiTarget)
                 .apply();
     }
 
