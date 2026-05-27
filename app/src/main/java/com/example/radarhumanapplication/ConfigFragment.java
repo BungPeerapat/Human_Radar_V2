@@ -1775,11 +1775,13 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         btnSensorEditZones.setOnClickListener(view -> openDetectionZonesDialog());
     }
 
-    /** Placeholder until Agent B's {@code DetectionZonesDialog} lands and replaces this stub. */
+    /** Hook from the Sensor Behavior card's "Edit detection zones…" button.
+     *  Hands off to the standalone {@link com.example.radarhumanapplication.sensor.DetectionZonesDialog}
+     *  which has its own FETCH / PUSH / visual preview against the 3 zones the
+     *  firmware exposes via {@code /api/config}. */
     private void openDetectionZonesDialog() {
-        Toast.makeText(requireContext(),
-                "Detection Zones dialog — pending Agent B",
-                Toast.LENGTH_SHORT).show();
+        com.example.radarhumanapplication.sensor.DetectionZonesDialog
+                .show(getParentFragmentManager());
     }
 
     private void applySensorCfgToUi(SensorConfig c) {
