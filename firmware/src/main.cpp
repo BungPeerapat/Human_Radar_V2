@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_task_wdt.h>
+#include <esp_ota_ops.h>   // OTA rollback confirm (esp_ota_mark_app_valid_cancel_rollback)
 
 #include "radar_driver.h"
 #include "config_manager.h"
@@ -105,6 +106,29 @@ static void filterGhostTargets(RadarFrame& frame) {
 }
 
 // ============================================================================
+// OTA rollback guard
+// ============================================================================
+// ESP32 marks a freshly-OTA'd image ESP_OTA_IMG_PENDING_VERIFY. With rollback
+// protection enabled the bootloader reverts to the PREVIOUS firmware on the next
+// reset unless the running image confirms itself valid. Without this call a
+// successful update boots once, then silently rolls back on the next reboot
+// (e.g. a brown-out during WiFi bring-up) — the "updated but version unchanged"
+// bug. Confirm early, before WiFi/radar start, so a good update always sticks.
+static void confirmOtaImageValid() {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    if (running == nullptr) return;
+    esp_ota_img_states_t state;
+    if (esp_ota_get_state_partition(running, &state) != ESP_OK) return;
+    if (state == ESP_OTA_IMG_PENDING_VERIFY) {
+        if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+            Log::info(TAG_SYSTEM, "OTA image confirmed valid — rollback cancelled");
+        } else {
+            Log::warn(TAG_SYSTEM, "esp_ota_mark_app_valid_cancel_rollback failed");
+        }
+    }
+}
+
+// ============================================================================
 // Setup
 // ============================================================================
 void setup() {
@@ -116,6 +140,10 @@ void setup() {
     Log::info(TAG_SYSTEM, "  Board: ESP32-WROOM32");
     Log::info(TAG_SYSTEM, "  MQTT + Remote Config + Log Viewer");
     Log::info(TAG_SYSTEM, "========================================");
+
+    // Confirm a freshly-flashed OTA image BEFORE anything that can brown-out
+    // (WiFi/radar), so a good update is never rolled back to the old firmware.
+    confirmOtaImageValid();
 
     // Snapshot reset reason and bump brown-out / panic counters in NVS so the
     // app can report power health without any extra hardware.
