@@ -170,6 +170,12 @@ public class AlertTtsPlayer {
                 .replace("{operator}", operatorLabel);
     }
 
+    /** Stop any in-flight speech but keep the engine warm for the next utterance. */
+    public synchronized void stop() {
+        if (tts == null) return;
+        try { tts.stop(); } catch (Exception ignored) {}
+    }
+
     /** Stop any in-flight speech and shut down the engine. Safe to call multiple times. */
     public synchronized void releaseAll() {
         if (tts == null) return;

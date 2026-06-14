@@ -26,6 +26,15 @@ public class AlertSoundPlayer {
         this.appContext = ctx.getApplicationContext();
     }
 
+    /**
+     * Test-only constructor: builds a player with no Android context. Unit-test subclasses
+     * override {@link #play}, {@link #stop}, and {@link #stopAll} and never touch MediaPlayer,
+     * so the null context is never dereferenced.
+     */
+    protected AlertSoundPlayer() {
+        this.appContext = null;
+    }
+
     /** Plays the rule's sound. If a player for the same rule is already running, ignored. */
     public void play(AlertRule rule) {
         if (rule.soundUri == null || rule.soundUri.isEmpty()) return;
