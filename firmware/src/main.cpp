@@ -159,38 +159,12 @@ void setup() {
 }
 
 // ============================================================================
-// WiFi state monitor (STA mode only)
-// ============================================================================
-static void monitorWifi() {
-    static uint32_t lastCheck = 0;
-    static bool     wasConnected = (WiFi.status() == WL_CONNECTED);
-
-    const uint32_t now = millis();
-    if (now - lastCheck < 1000) return;
-    lastCheck = now;
-
-    if (WiFi.getMode() == WIFI_AP) return;
-
-    const bool nowConnected = (WiFi.status() == WL_CONNECTED);
-    if (nowConnected != wasConnected) {
-        if (nowConnected) {
-            Log::info(TAG_SYSTEM, "WiFi reconnected");
-            alertPattern.onWifiConnected();
-        } else {
-            Log::warn(TAG_SYSTEM, "WiFi link lost");
-            alertPattern.onWifiDisconnected();
-        }
-        wasConnected = nowConnected;
-    }
-}
-
-// ============================================================================
 // Main Loop
 // ============================================================================
 void loop() {
     webServer.loop();
     mqttClient.loop();
-    monitorWifi();
+    webServer.maintainWifi();   // edge detect + Auto-Find-WiFi reconnect/AP-rescue
     esp_task_wdt_reset();
 
     if (radar.update()) {

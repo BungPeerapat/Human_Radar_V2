@@ -19,12 +19,15 @@ void WebRadarServer::begin() {
     setupHTTP();
     setupWebSocket();
 
-    // Start captive portal DNS in AP mode
+    // Start captive portal DNS in AP mode (incl. the rescue AP after a STA timeout)
     if (_isAP) {
         _dns.start(53, "*", WiFi.softAPIP());
         Log::info("Captive portal DNS started");
     }
 
+    // Seed the link-state edge detector so maintainWifi() doesn't fire a spurious
+    // "reconnected" event on the first loop iteration.
+    _staWasConnected = (WiFi.status() == WL_CONNECTED);
     _ready = true;
 }
 
@@ -44,6 +47,8 @@ void WebRadarServer::setupWiFi() {
         // Station mode - connect to user's WiFi
         WiFi.mode(WIFI_STA);
         WiFi.setHostname(cfg.deviceName);
+        // Let the stack auto-rejoin on transient drops; maintainWifi() backstops it.
+        WiFi.setAutoReconnect(cfg.autoReconnect != 0);
         WiFi.begin(cfg.wifiSSID, cfg.wifiPass);
         Log::info("Connecting to WiFi: %s", cfg.wifiSSID);
 
@@ -59,6 +64,15 @@ void WebRadarServer::setupWiFi() {
             }
             if (millis() - startMs > WIFI_STA_TIMEOUT) {
                 Serial.println();
+                if (cfg.autoReconnect) {
+                    // "Auto Find WiFi": don't get stuck. Bring up a rescue AP for
+                    // config access while STA keeps retrying in the background
+                    // (maintainWifi() re-kicks the join and drops the AP on success).
+                    Log::warn(TAG_WIFI, "WiFi timeout — AP+STA rescue, will keep retrying %s",
+                              cfg.wifiSSID);
+                    startRescueAp();
+                    return;
+                }
                 Log::error("WiFi timeout! Falling back to AP mode.");
                 // Fall through to AP mode below
                 goto start_ap;
@@ -79,6 +93,84 @@ start_ap:
     _ip = WiFi.softAPIP().toString();
     Log::info("WiFi AP started: %s (pass: %s)", WIFI_AP_SSID, WIFI_AP_PASS);
     Log::info("IP: %s", _ip.c_str());
+}
+
+// ============================================================================
+// Rescue AP: AP + STA at once. The "HumanRadar" AP stays reachable for config
+// while the STA interface keeps trying to (re)join the configured network.
+// ============================================================================
+void WebRadarServer::startRescueAp() {
+    const DeviceConfig& cfg = configManager.get();
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.softAP(WIFI_AP_SSID, WIFI_AP_PASS, WIFI_AP_CHANNEL, 0, WIFI_AP_MAX_CONN);
+    delay(100);
+    // (Re)start the background STA join — switching mode can reset the prior attempt.
+    WiFi.begin(cfg.wifiSSID, cfg.wifiPass);
+    _isAP = true;
+    _ip = WiFi.softAPIP().toString();
+    _lastStaRetryMs = millis();
+    Log::info("Rescue AP up: %s (%s) — STA retrying %s",
+              WIFI_AP_SSID, _ip.c_str(), cfg.wifiSSID);
+}
+
+// ============================================================================
+// WiFi keep-alive (called every loop). Replaces the old static monitorWifi():
+//   * edge-detects STA up/down for the LED/buzzer indicator
+//   * when "Auto Find WiFi" is on: brings up a rescue AP on drop, re-kicks the
+//     STA join periodically, and drops the rescue AP once STA is back.
+// ============================================================================
+void WebRadarServer::maintainWifi() {
+    const uint32_t now = millis();
+    if (now - _lastWifiCheckMs < 1000) return;
+    _lastWifiCheckMs = now;
+
+    const DeviceConfig& cfg = configManager.get();
+    // User explicitly chose AP-only mode — nothing to maintain.
+    if (cfg.wifiMode != 1) return;
+
+    const bool connected = (WiFi.status() == WL_CONNECTED);
+
+    // Edge-triggered indicator callbacks (formerly monitorWifi()).
+    if (connected != _staWasConnected) {
+        if (connected) {
+            Log::info("WiFi reconnected");
+            alertPattern.onWifiConnected();
+        } else {
+            Log::warn(TAG_WIFI, "WiFi link lost");
+            alertPattern.onWifiDisconnected();
+        }
+        _staWasConnected = connected;
+    }
+
+    // Feature off → detect-only, like the original behaviour.
+    if (!cfg.autoReconnect) return;
+
+    if (connected) {
+        // Back online. If a rescue AP was up, drop it and return to plain STA.
+        if (_isAP) {
+            Log::info("STA reconnected — dropping rescue AP");
+            _dns.stop();
+            WiFi.softAPdisconnect(true);
+            WiFi.mode(WIFI_STA);   // back to plain STA: tears down only the AP iface, keeps STA link
+            _isAP = false;
+        }
+        _ip = WiFi.localIP().toString();
+        return;
+    }
+
+    // Disconnected: make sure the rescue AP is up so config stays reachable.
+    if (!_isAP) {
+        Log::warn(TAG_WIFI, "STA down — bringing up rescue AP, retrying in background");
+        startRescueAp();
+        _dns.start(53, "*", WiFi.softAPIP());
+    }
+
+    // Periodically re-kick the STA join in case the stack stopped trying.
+    if (now - _lastStaRetryMs >= WIFI_STA_RETRY_INTERVAL) {
+        _lastStaRetryMs = now;
+        Log::info("Retrying STA join to %s", cfg.wifiSSID);
+        WiFi.begin(cfg.wifiSSID, cfg.wifiPass);
+    }
 }
 
 // ============================================================================
@@ -313,11 +405,11 @@ void WebRadarServer::setupHTTP() {
 void WebRadarServer::handleGetConfig() {
     const DeviceConfig& cfg = configManager.get();
 
-    char json[1024];
+    char json[1200];   // headroom for all max-length string fields + zones + ar/fw
     int len = snprintf(json, sizeof(json),
         "{\"wm\":%d,\"ws\":\"%s\",\"wp\":\"%s\","
         "\"me\":%d,\"mr\":%d,\"mh\":\"%s\",\"mp\":%d,\"mu\":\"%s\",\"mpp\":\"%s\",\"ms\":\"%s\","
-        "\"dn\":\"%s\",\"ip\":\"%s\","
+        "\"dn\":\"%s\",\"ip\":\"%s\",\"ar\":%d,"
         "\"pi\":%d,\"ud\":%d,\"tt\":%d,\"mt\":%d,\"sn\":%d,"
         "\"z0\":{\"en\":%d,\"x1\":%d,\"y1\":%d,\"x2\":%d,\"y2\":%d},"
         "\"z1\":{\"en\":%d,\"x1\":%d,\"y1\":%d,\"x2\":%d,\"y2\":%d},"
@@ -327,7 +419,7 @@ void WebRadarServer::handleGetConfig() {
         cfg.mqttEnabled, cfg.mqttProto,
         cfg.mqttHost, cfg.mqttPort, cfg.mqttUser, cfg.mqttPass,
         mqttClient.getStatusText(),
-        cfg.deviceName, _ip.c_str(),
+        cfg.deviceName, _ip.c_str(), cfg.autoReconnect,
         cfg.publishIntervalMs, cfg.unmannedDelayMs, cfg.targetTimeoutMs,
         cfg.multiTargetMode, cfg.sensitivity,
         cfg.zones[0].enabled, cfg.zones[0].x1, cfg.zones[0].y1, cfg.zones[0].x2, cfg.zones[0].y2,
@@ -386,6 +478,12 @@ void WebRadarServer::handleSaveConfig() {
         String  ws = hasKey("ws") ? getJsonStr("ws") : String(cur.wifiSSID);
         String  wp = hasKey("wp") ? getJsonStr("wp") : String(cur.wifiPass);
         configManager.setWiFi(wm, ws.c_str(), wp.c_str());
+    }
+
+    // Save "Auto Find WiFi" toggle (auto-reconnect + AP rescue).
+    if (hasKey("ar")) {
+        int ar = getJsonInt("ar", -1);
+        if (ar >= 0) configManager.setAutoReconnect((uint8_t)ar);
     }
 
     // Save MQTT — only if at least one mqtt key is present.

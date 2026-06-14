@@ -223,33 +223,6 @@ void setup() {
 }
 
 // ============================================================================
-// WiFi state monitor (STA mode only - AP mode never "drops")
-// ============================================================================
-static void monitorWifi() {
-    static uint32_t lastCheck = 0;
-    static bool     wasConnected = (WiFi.status() == WL_CONNECTED);
-
-    const uint32_t now = millis();
-    if (now - lastCheck < 1000) return;
-    lastCheck = now;
-
-    // AP mode: nothing to watch
-    if (WiFi.getMode() == WIFI_AP) return;
-
-    const bool nowConnected = (WiFi.status() == WL_CONNECTED);
-    if (nowConnected != wasConnected) {
-        if (nowConnected) {
-            Log::info(TAG_SYSTEM, "WiFi reconnected");
-            alertPattern.onWifiConnected();
-        } else {
-            Log::warn(TAG_SYSTEM, "WiFi link lost");
-            alertPattern.onWifiDisconnected();
-        }
-        wasConnected = nowConnected;
-    }
-}
-
-// ============================================================================
 // Main Loop
 // ============================================================================
 void loop() {
@@ -259,8 +232,8 @@ void loop() {
     // 2. Handle MQTT connection
     mqttClient.loop();
 
-    // 3. WiFi state edge detection (no-op until status flips)
-    monitorWifi();
+    // 3. WiFi keep-alive: edge detection + Auto-Find-WiFi reconnect/AP-rescue
+    webServer.maintainWifi();
 
     // Feed the watchdog every loop iteration.
     esp_task_wdt_reset();

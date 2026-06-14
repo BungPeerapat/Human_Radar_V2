@@ -38,6 +38,7 @@ void ConfigManager::begin() {
 void ConfigManager::applyDefaults() {
     memset(&_cfg, 0, sizeof(_cfg));
     _cfg.wifiMode = 0;
+    _cfg.autoReconnect = 1;   // "Auto Find WiFi" ON by default — never get stuck in AP
     strlcpy(_cfg.deviceName, "HumanRadar", sizeof(_cfg.deviceName));
     // MQTT broker pre-fill — disabled by default, but the user can flip the
     // Enable switch on the /settings page without having to re-type host/port
@@ -74,6 +75,7 @@ void ConfigManager::loadFromNVS() {
     _cfg.wifiMode = _prefs.getUChar("wifi_mode", 0);
     _prefs.getString("wifi_ssid", _cfg.wifiSSID, sizeof(_cfg.wifiSSID));
     _prefs.getString("wifi_pass", _cfg.wifiPass, sizeof(_cfg.wifiPass));
+    _cfg.autoReconnect = _prefs.getUChar("auto_rc", 1);   // default ON for new+upgraded devices
 
     // MQTT — applyDefaults() ran first, so _cfg.mqttHost/_cfg.mqttPort already
     // hold the pre-fill ("119.59.99.155" : 8883). Only override from NVS when
@@ -139,6 +141,14 @@ void ConfigManager::setWiFi(uint8_t mode, const char* ssid, const char* pass) {
     _prefs.end();
 
     Log::info(TAG_CONFIG, "WiFi saved: mode=%s, SSID=[%s]", mode == 1 ? "STA" : "AP", ssid);
+}
+
+void ConfigManager::setAutoReconnect(uint8_t enabled) {
+    _cfg.autoReconnect = enabled ? 1 : 0;
+    _prefs.begin(NVS_NAMESPACE, false);
+    _prefs.putUChar("auto_rc", _cfg.autoReconnect);
+    _prefs.end();
+    Log::info(TAG_CONFIG, "Auto Find WiFi: %s", _cfg.autoReconnect ? "ON" : "OFF");
 }
 
 // ============================================================================

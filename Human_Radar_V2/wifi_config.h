@@ -26,6 +26,9 @@
 #define WIFI_STA_SSID        "YourWiFi"
 #define WIFI_STA_PASS        "YourPassword"
 #define WIFI_STA_TIMEOUT     10000          // ms, connection timeout
+// "Auto Find WiFi": while STA is down, re-kick WiFi.begin() this often (ms) so the
+// device rejoins on its own when the router returns — no power-cycle needed.
+#define WIFI_STA_RETRY_INTERVAL  20000
 
 // --- Web Server ---
 #define WEB_SERVER_PORT      80

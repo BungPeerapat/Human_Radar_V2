@@ -101,19 +101,21 @@ public final class AlertHttpClient {
      * @param mode 0 = AP (device hosts its own WiFi); 1 = STA (join the user's WiFi)
      * @param ssid network name (empty when mode = AP)
      * @param pass network password (empty when mode = AP or open network)
+     * @param autoReconnect 1 = "Auto Find WiFi" (keep retrying STA + AP rescue); 0 = off
      *
      * The device persists the values to NVS and calls ESP.restart() so the
      * connection is dropped while the response is in flight — that's treated as
      * a success.
      */
     public void updateWifi(String deviceIp, int mode, String ssid, String pass,
-                           Callback<Boolean> cb) {
+                           int autoReconnect, Callback<Boolean> cb) {
         io.execute(() -> {
             try {
                 JsonObject body = new JsonObject();
                 body.addProperty("wm", mode);
                 body.addProperty("ws", ssid == null ? "" : ssid);
                 body.addProperty("wp", pass == null ? "" : pass);
+                body.addProperty("ar", autoReconnect);   // "Auto Find WiFi" toggle
                 // Device may also be expecting MQTT keys to be present; send empty
                 // sentinels so the handler's getJsonInt() defaults don't overwrite
                 // existing values. Top-level handlers ignore unknown keys.

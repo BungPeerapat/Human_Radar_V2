@@ -33,6 +33,7 @@ struct DetectionZone {
 //   wifi_mode, wifi_ssid, wifi_pass
 //   mqtt_en, mqtt_proto, mqtt_host, mqtt_port, mqtt_user, mqtt_pass
 //   dev_name
+//   auto_rc     - auto-reconnect WiFi / "Auto Find WiFi" (0/1)
 //   pub_int     - publish interval (ms)
 //   unm_dly     - unmanned delay (ms)
 //   tgt_tout    - target timeout (ms)
@@ -46,6 +47,7 @@ struct DeviceConfig {
     uint8_t  wifiMode;                // 0=AP, 1=STA
     char     wifiSSID[33];
     char     wifiPass[65];
+    uint8_t  autoReconnect;           // 0=off, 1="Auto Find WiFi": keep retrying STA + AP rescue
 
     // MQTT
     uint8_t  mqttEnabled;             // 0=off, 1=on
@@ -79,6 +81,7 @@ public:
     const DeviceConfig& get() const { return _cfg; }
 
     void setWiFi(uint8_t mode, const char* ssid, const char* pass);
+    void setAutoReconnect(uint8_t enabled);
     void setMQTT(uint8_t enabled, uint8_t proto, const char* host, uint16_t port, const char* user, const char* pass);
     void setDeviceName(const char* name);
 

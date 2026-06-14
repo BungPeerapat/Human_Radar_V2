@@ -594,6 +594,26 @@
                     android:maxLength="64" />
             </com.google.android.material.textfield.TextInputLayout>
 
+            <!-- Auto Find WiFi: keep retrying STA + AP rescue so the device
+                 self-heals after the router drops, instead of getting stuck
+                 in AP mode and needing a power-cycle. -->
+            <com.google.android.material.materialswitch.MaterialSwitch
+                android:id="@+id/wifi_auto_reconnect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Auto Find WiFi (auto-reconnect)"
+                android:textColor="@color/white"
+                android:checked="true"
+                android:layout_marginBottom="2dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="If WiFi drops, the device keeps retrying and keeps the HumanRadar AP up as a backup — no power-cycle needed."
+                android:textColor="@color/radar_text_dim"
+                android:textSize="11sp"
+                android:layout_marginBottom="8dp" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

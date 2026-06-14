@@ -22,6 +22,10 @@ public:
     void loop();
     void broadcastFrame(const RadarFrame& frame, uint32_t frameCount, uint32_t errorCount);
 
+    // Runtime WiFi keep-alive: detects STA drops, and when "Auto Find WiFi" is on,
+    // keeps an AP rescue up + retries STA until the network returns. Call from loop().
+    void maintainWifi();
+
     bool isReady() const { return _ready; }
     String getIP() const { return _ip; }
 
@@ -34,7 +38,13 @@ private:
     String           _ip;
     uint8_t          _clientCount = 0;
 
+    // Auto-reconnect / rescue-AP runtime state (see maintainWifi()).
+    uint32_t         _lastWifiCheckMs = 0;
+    uint32_t         _lastStaRetryMs = 0;
+    bool             _staWasConnected = false;
+
     void setupWiFi();
+    void startRescueAp();
     void setupHTTP();
     void setupWebSocket();
     void setupMDNS();

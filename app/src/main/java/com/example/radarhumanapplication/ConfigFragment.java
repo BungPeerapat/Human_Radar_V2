@@ -66,6 +66,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     private RadioButton wifiModeSta, wifiModeAp;
     private com.google.android.material.textfield.MaterialAutoCompleteTextView wifiSsid;
     private TextInputEditText wifiPass;
+    private MaterialSwitch wifiAutoReconnect;
     private MaterialButton btnWifiFetch, btnWifiApply;
     private TextView wifiStatus;
     private final WifiScanHelper wifiScanHelper = new WifiScanHelper();
@@ -191,6 +192,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         wifiModeAp  = v.findViewById(R.id.wifi_mode_ap);
         wifiSsid    = v.findViewById(R.id.wifi_ssid);
         wifiPass    = v.findViewById(R.id.wifi_pass);
+        wifiAutoReconnect = v.findViewById(R.id.wifi_auto_reconnect);
         btnWifiFetch = v.findViewById(R.id.btn_wifi_fetch);
         btnWifiApply = v.findViewById(R.id.btn_wifi_apply);
         wifiStatus   = v.findViewById(R.id.wifi_status);
@@ -288,6 +290,9 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
             wifiPass.setText("");
             if (wm == 1) wifiModeSta.setChecked(true);
             else         wifiModeAp.setChecked(true);
+            // "ar" (Auto Find WiFi) — absent on pre-feature firmware → default ON.
+            int ar = cfg.has("ar") ? cfg.get("ar").getAsInt() : 1;
+            wifiAutoReconnect.setChecked(ar != 0);
             setWifiStatus("Fetched · mode=" + (wm == 1 ? "STA" : "AP")
                     + " · SSID=" + (ws.isEmpty() ? "(none)" : ws), false);
         });
@@ -369,6 +374,7 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
         body.addProperty("wm", mode);
         body.addProperty("ws", ssid == null ? "" : ssid);
         body.addProperty("wp", pass == null ? "" : pass);
+        body.addProperty("ar", wifiAutoReconnect.isChecked() ? 1 : 0);
         copyIntIfPresent(current, body, "me");
         copyIntIfPresent(current, body, "mr");
         copyStrIfPresent(current, body, "mh");
@@ -388,8 +394,9 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
     }
 
     private void pushWifiOnly(String ip, int mode, String ssid, String pass) {
+        int ar = wifiAutoReconnect.isChecked() ? 1 : 0;
         setWifiStatus("Sending WiFi config to " + ip + "…", false);
-        alertHttp.updateWifi(ip, mode, ssid, pass, (ok, err) ->
+        alertHttp.updateWifi(ip, mode, ssid, pass, ar, (ok, err) ->
                 handleWifiApplyResult(ok, err, mode, ssid));
     }
 
