@@ -5,6 +5,7 @@
 
 #include <Update.h>      // ESP32 OTA helper (built-in to esp32 Arduino core)
 #include <esp_ota_ops.h> // esp_ota_mark_app_invalid_rollback_and_reboot()
+#include <esp_task_wdt.h> // feed the loop watchdog during long OTA uploads
 
 // Global instance
 WebRadarServer webServer;
@@ -290,6 +291,10 @@ void WebRadarServer::setupHTTP() {
                     }
                     break;
                 case UPLOAD_FILE_WRITE:
+                    // The whole multi-MB POST drains inside one handleClient() call,
+                    // pausing loop() — feed the watchdog per chunk so it can't trip
+                    // mid-flash and reboot back into the old firmware.
+                    esp_task_wdt_reset();
                     if (Update.write(upload.buf, upload.currentSize) !=
                         upload.currentSize) {
                         Log::error(TAG_SYSTEM, "Update.write failed: %s",

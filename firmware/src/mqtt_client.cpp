@@ -6,6 +6,7 @@
 #include <HTTPClient.h>
 #include <Update.h>
 #include <WiFiClientSecure.h>
+#include <esp_task_wdt.h>   // feed the loop watchdog during long OTA downloads
 
 MqttRadarClient mqttClient;
 
@@ -630,6 +631,11 @@ void MqttRadarClient::cmdOtaPull(const char* requestId, const char* url) {
     size_t written = 0;
     uint32_t lastBlinkMs = millis();
     while (http.connected() && (total <= 0 || (int)written < total)) {
+        // The download can run far longer than the 15s loop watchdog (slow TLS /
+        // weak WiFi). Feed the WDT every iteration — including stalls (avail==0) —
+        // so a long-but-healthy pull isn't reset mid-flash, which would leave the
+        // device on the old firmware (the "updated but version unchanged" bug).
+        esp_task_wdt_reset();
         size_t avail = stream->available();
         if (avail == 0) { delay(1); continue; }
         size_t toRead = avail > bufSize ? bufSize : avail;
