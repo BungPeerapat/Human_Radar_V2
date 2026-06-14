@@ -251,10 +251,10 @@ void WebRadarServer::setupHTTP() {
     _http.on("/api/firmware-update", HTTP_POST,
         [this]() {
             // This first lambda runs AFTER the upload completes (or fails).
-            if (Update.hasError()) {
-                String err = String("{\"ok\":false,\"error\":\"") +
-                             Update.errorString() + "\"}";
-                Log::error(TAG_SYSTEM, "OTA failed: %s", Update.errorString());
+            if (!_otaBeginOk || Update.hasError()) {
+                const char* emsg = _otaBeginOk ? Update.errorString() : "begin failed";
+                String err = String("{\"ok\":false,\"error\":\"") + emsg + "\"}";
+                Log::error(TAG_SYSTEM, "OTA failed: %s", emsg);
                 _http.send(500, "application/json", err);
                 // Cancel the heartbeat — the device isn't actually about
                 // to reboot into new firmware.
@@ -290,8 +290,11 @@ void WebRadarServer::setupHTTP() {
                     alertPattern.onFirmwareUpdateStart();
                     alertPattern.update();
                     // Start an OTA write to the "next" partition. Size unknown =
-                    // accept whatever fits the partition.
-                    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+                    // accept whatever fits the partition. Erasing it can take a
+                    // few seconds — feed the watchdog first.
+                    esp_task_wdt_reset();
+                    _otaBeginOk = Update.begin(UPDATE_SIZE_UNKNOWN);
+                    if (!_otaBeginOk) {
                         Log::error(TAG_SYSTEM, "Update.begin failed: %s",
                                    Update.errorString());
                     }
@@ -301,7 +304,7 @@ void WebRadarServer::setupHTTP() {
                     // pausing loop() — feed the watchdog per chunk so it can't trip
                     // mid-flash and reboot back into the old firmware.
                     esp_task_wdt_reset();
-                    if (Update.write(upload.buf, upload.currentSize) !=
+                    if (_otaBeginOk && Update.write(upload.buf, upload.currentSize) !=
                         upload.currentSize) {
                         Log::error(TAG_SYSTEM, "Update.write failed: %s",
                                    Update.errorString());
@@ -311,7 +314,7 @@ void WebRadarServer::setupHTTP() {
                     alertPattern.update();
                     break;
                 case UPLOAD_FILE_END:
-                    if (Update.end(true)) {
+                    if (_otaBeginOk && Update.end(true)) {
                         Log::info(TAG_SYSTEM, "OTA end: %u bytes accepted",
                                   upload.totalSize);
                     } else {

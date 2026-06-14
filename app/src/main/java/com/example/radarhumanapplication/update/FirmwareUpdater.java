@@ -82,8 +82,11 @@ public final class FirmwareUpdater {
         }
     }
 
-    /** Default wait for the device to republish {@code /info} on the new fw. */
-    public static final long DEFAULT_MQTT_VERIFY_TIMEOUT_MS = 60_000;
+    /** Default wait for the device to republish {@code /info} on the new fw.
+     *  Generous because after flashing the ESP reboots, reconnects WiFi, then MQTT,
+     *  then republishes — on a weak link that easily exceeds a minute, and reporting
+     *  failure too early wrongly sends the user toward rollback/USB recovery. */
+    public static final long DEFAULT_MQTT_VERIFY_TIMEOUT_MS = 180_000;
 
     /**
      * Pre-upload device snapshot from {@code GET /api/info}. Used by the

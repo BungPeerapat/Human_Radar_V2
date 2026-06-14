@@ -42,6 +42,9 @@ private:
     uint32_t         _lastWifiCheckMs = 0;
     uint32_t         _lastStaRetryMs = 0;
     bool             _staWasConnected = false;
+    // True once Update.begin() succeeded for the in-progress /api/firmware-update
+    // upload; gates write/end/response so a failed begin can't report false success.
+    bool             _otaBeginOk = false;
 
     void setupWiFi();
     void startRescueAp();

@@ -866,8 +866,12 @@ public class MqttService {
     }
 
     private void publish(String topicStr, String payload) {
+        // Commands (incl. ota_pull) go through here. Use QoS 1 (at-least-once) so a
+        // control message isn't silently dropped on a flaky link or right after an
+        // MQTT reconnect — at-most-once (QoS 0) was losing ota_pull commands.
         client.publishWith()
                 .topic(topicStr)
+                .qos(com.hivemq.client.mqtt.datatypes.MqttQos.AT_LEAST_ONCE)
                 .payload(payload.getBytes(StandardCharsets.UTF_8))
                 .send()
                 .whenComplete((pub, err) -> {

@@ -618,6 +618,9 @@ void MqttRadarClient::cmdOtaPull(const char* requestId, const char* url) {
     }
     Log::info(TAG_MQTT, "ota_pull downloading %d bytes", total);
 
+    // Erasing the 1.25 MB OTA partition can take a few seconds under flash/WiFi
+    // contention — feed the watchdog right before it so it can't trip pre-loop.
+    esp_task_wdt_reset();
     if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN)) {
         http.end();
         alertPattern.onFirmwareUpdateFinish();
@@ -655,6 +658,22 @@ void MqttRadarClient::cmdOtaPull(const char* requestId, const char* url) {
     }
     http.end();
 
+    // Never commit a partial image. A dropped TLS stream (weak link) exits the
+    // loop with written<total; Update.end(true) would otherwise finalize the
+    // truncated flash and set it bootable — a brick risk. Abort instead.
+    if (total > 0 && written != (size_t)total) {
+        Update.abort();
+        alertPattern.onFirmwareUpdateFinish();
+        ackFail("incomplete download", (int)written);
+        return;
+    }
+    if (total <= 0 && written < 100000u) {
+        Update.abort();
+        alertPattern.onFirmwareUpdateFinish();
+        ackFail("image too small", (int)written);
+        return;
+    }
+
     if (!Update.end(true)) {
         alertPattern.onFirmwareUpdateFinish();
         ackFail(Update.errorString(), 0);
@@ -667,6 +686,7 @@ void MqttRadarClient::cmdOtaPull(const char* requestId, const char* url) {
         "{\"request_id\":\"%s\",\"status\":\"ok\",\"cmd\":\"ota_pull\","
         "\"bytes\":%u,\"restarting\":true}", requestId, (unsigned)written);
     _mqtt.publish(_topicCmdAck, ack);
+    _mqtt.loop();   // flush the ack to the broker before we reboot
 
     alertPattern.onFirmwareUpdateFinish();
     uint32_t finishDeadline = millis() + 2500;
