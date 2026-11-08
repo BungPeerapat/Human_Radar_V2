@@ -24,4 +24,6 @@
 - ตรวจภาพแนวตั้งและหมุนเป็นแนวนอนว่า guard ยังอยู่
 - แก้ ClassCastException เดิมขณะสร้าง Dashboard แนวนอนใหม่ โดยให้ช่องชื่ออุปกรณ์เป็น MaterialAutoCompleteTextView ตรงกับโค้ด
 
-Full Screen เป็นงานแยกใน task 004 ซึ่งผู้ใช้ให้ทำหลัง deploy Touch lock
+ส่งมอบ v1.1.2 / versionCode 96, CI 42448311832 success; ตรวจ public artifacts และ signing certificate แล้ว แจ้งผู้ใช้ผ่าน LINE บน SSH server
+
+Full Screen เป็นงานแยกใน task 004 ซึ่งเริ่มต่อหลัง deploy Touch lock ตามผู้ใช้แจ้ง
