@@ -6,6 +6,14 @@
 
 ณ 2026-11-08: MQTT server และ SSH ผ่าน Tailscale พร้อม, implementation checkpoint `775ea41`, firmware หลัก/bridge build บน Linux ได้แล้ว งาน 001–002 ยังอยู่ `doing` เพราะรอทดสอบตัดไฟจริงและยืนยัน UART targets บน `HumanRadarBung` (ESP32-D0WD-V3, flash 4 MB, MAC `08:d1:f9:34:91:b4`)
 
+## ผลส่งต่อ checkout ที่ตรวจแล้ว
+
+- ย้ายประวัติ Git ผ่าน bundle และ fast-forward branch `dev` บนเซิร์ฟเวอร์ถึง `b7cc25d` แล้ว; ไม่ได้ push GitHub
+- เก็บไฟล์ source ที่เคยคัดลอกทดสอบบนเซิร์ฟเวอร์ไว้ใน Git stash ก่อนปรับ checkout; ไม่ต้อง apply stash ทับ implementation ล่าสุด
+- หลัง fast-forward ตรวจ `git status --short` ว่าง และรัน `bash tools/test-native.sh` ผ่าน รวม 12 OTA transfer scenarios และการเทียบ firmware ทั้งสาม tree
+- ตรวจจากเซิร์ฟเวอร์ผ่าน MQTT/TLS ได้ health ACK จาก `HumanRadarBung`, firmware `1.1.0-mqtt-server`; ยังไม่มี UART targets ในรอบตรวจ จึงคง hardware gates ไว้ใน `doing`
+- การตัดไฟระหว่าง OTA ยังรอผู้ใช้ช่วยกับ USB จริง
+
 ## การเชื่อมต่อ
 
 จาก Windows account นี้:
