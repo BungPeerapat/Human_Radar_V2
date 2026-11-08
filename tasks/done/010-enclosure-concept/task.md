@@ -10,7 +10,7 @@
 - [x] HTML 3D ทำงานแบบ local file มีมุมประกอบ/cutaway/exploded และอธิบายชิ้นส่วน
 - [x] ขนาดสมมติแยกจากข้อมูลผู้ผลิต ไม่อ้างเป็น CAD พร้อมผลิต
 - [x] ตรวจ browser/mobile/export/fallback, review และแก้ findings
-- [ ] Publish HTTPS, ตรวจ MIME/ไฟล์/เว็บเดิม, push/sync และส่ง LINE
+- [x] Publish HTTPS, ตรวจ MIME/ไฟล์/เว็บเดิม, push/sync และส่ง LINE
 
 Codex; เริ่มจาก 2f4c63c วันที่ 2026-11-09
 
@@ -26,4 +26,5 @@ Codex; เริ่มจาก 2f4c63c วันที่ 2026-11-09
 - Public HTTPS verification ผ่าน: HTML/JS/CSS/PNG/GLB ตรงกับ local bytes และ MIME ถูกต้อง เว็บเดิมยังตอบ 200
 - Mobile-context Chrome ผ่าน touch orbit, exploded, image load และ static GLB download เทียบต้นฉบับ ไม่มี JS errors/overflow
 - เผยแพร่ https://systemdeveloper.ddns.net/human-radar/concepts/enclosure-v1/ โดยเพิ่มเฉพาะ Nginx static prefix และ backup config เดิมไว้แล้ว
-- รอ push/sync และ LINE ก่อนย้าย done
+- Push source/artifacts 2100817 และ sync SSH แล้ว ส่งลิงก์หน้า 3D/ภาพ/Windows HTML path เข้า LINE ผ่าน notify.js บน server ยืนยันจาก journal สำเร็จ
+- ตัว HTML เปิด offline ได้; ภาพ PNG, พรอมป์ imagegen และ GLB อยู่ใน docs/concepts/enclosure-v1/ พร้อม editable viewer source
