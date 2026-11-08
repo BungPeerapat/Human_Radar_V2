@@ -1,0 +1,84 @@
+# ผลทดสอบ MQTT และ OTA
+
+วันที่ 2026-11-08, branch `dev`, เริ่มจาก commit `cea5c529c02867803d6906f743337742db56f5df` ตารางนี้แยกสิ่งที่พิสูจน์แล้วออกจากงานที่ยังรอตรวจรับ
+
+## อุปกรณ์และสภาพแวดล้อม
+
+- ESP32 จริง: `HumanRadarBung`, ESP32-D0WD-V3 rev 3.1, MAC `08:d1:f9:34:91:b4`, flash 4 MB
+- Firmware เริ่มต้น: `1.0.61`; OTA slots `app0`/`app1` ขนาด 1,310,720 bytes ต่อ slot
+- IP ที่ทดสอบใน LAN: `10.252.73.75`
+- Android: APK ของ checkout นี้บน emulator API 36 (`emulator-5556`), เชื่อมกับ broker และ ESP32 จริง ไม่ใช่ mock broker; ยังไม่ได้ทดสอบบนโทรศัพท์จริง
+- Broker: Mosquitto 2.1.2 บน `systemdeveloper.ddns.net`, TLS `8883`, WSS `9002` `/mqtt`
+- เครื่องพัฒนา Linux: SSH ผ่าน Tailscale `100.77.46.79`, checkout `/root/project/Human_Radar_V2`
+
+## ผลที่ยืนยันแล้ว
+
+| การทดสอบ | หลักฐาน / ผล |
+| --- | --- |
+| Broker authentication/ACL | ปฏิเสธ anonymous, password ผิด และ publish นอก `humanradar/#` |
+| TLS และ WSS จากภายนอก | Publish/subscribe ผ่าน TLS ที่ตรวจใบรับรองได้ทั้งสองวิธี |
+| Retained persistence | ข้อความ retained อยู่หลัง restart broker |
+| ย้ายบอร์ดจริง | เปลี่ยนจาก broker เก่าที่เสีย เป็น project hostname + TLS; `/status=online`, `/info` ตรงชื่อ/MAC |
+| OTA MQTT pull รอบแรก | `1.0.61` → `1.1.0-mqtt-test1`, รีบูตและกลับมาออนไลน์ ไม่ใช้ USB เขียน firmware |
+| OTA HTTP push รอบถัดไป | HTTP 200, `1.1.0-mqtt-test1` → `1.1.0-mqtt-test2`, ยืนยันรุ่นผ่าน MQTT หลังรีบูต |
+| Manual rollback | สั่ง HTTP rollback จาก test2 แล้วบอร์ดกลับมาเป็น test1 จริง ไม่สรุปจาก HTTP response อย่างเดียว |
+| Metadata ผิดบนบอร์ดจริง | ปฏิเสธ missing SHA, oversized image, plaintext URL, length mismatch, 404 และ SHA mismatch โดยมี error ACK |
+| ดาวน์โหลดขาดช่วงจริง | หยุดเฉพาะ HTTPS container ทดสอบระหว่างรับ body; บอร์ดตอบ `Incomplete firmware download` และไม่ commit |
+| การรักษาค่าผู้ใช้ | เทียบ WiFi, device name, sensor timing/mode/sensitivity ก่อนและหลังการย้าย ยังตรงกัน |
+| JSON regression | JSON แบบมี whitespace/partial update ไม่ล้าง WiFi/MQTT; field type ผิดตอบ HTTP 400 |
+| ESP32 WSS | เปลี่ยนเป็น protocol 1, port 9002 แล้วเชื่อมต่อได้โดยใช้ CA verification |
+| เข้า bridge ผ่าน OTA | Firmware หลักที่ใช้ WSS ดาวน์โหลด/ตรวจ hash ของ bridge แล้ว bridge ออนไลน์ผ่าน TLS ที่ map จาก project endpoint |
+| ออกจาก bridge ผ่าน OTA | Bridge ดาวน์โหลด/ตรวจ hash ของ test2 แล้ว firmware หลักกลับมาใช้ saved WSS config ได้ |
+| Android authenticated reconnect | Live regression เดิมล้มเหลวหลัง restart broker; แก้ reconnect auth/state แล้วผ่าน TLS ใน 9.864 วินาที พร้อม health command/ACK จากบอร์ดจริง |
+| Android WSS reconnect | เพิ่ม optional HiveMQ WebSocket dependencies; live regression ผ่าน WSS ใน 5.861 วินาที พร้อม health command/ACK จริง |
+| Android OTA ครบเส้นทาง | `FirmwareMqttOtaInstrumentedTest` ผ่านใน 63.859 วินาที: checksum rejection ไม่เรียก onUploaded แล้วติดตั้ง Linux-server-built `1.1.0-mqtt-server` และตรวจรุ่นหลัง reboot สำเร็จ |
+| GitHub hosting เดิม | ESP32 ดาวน์โหลด `.bin` จาก GitHub Releases ผ่าน HTTPS และ redirect จนครบ โดยใช้ expected hash ผิดเพื่อหยุดก่อน commit; ได้ SHA mismatch ตามคาด ไม่ downgrade |
+| MQTT config/health จริง | ตั้ง publish interval เดิม 100 ms ผ่าน config topic ได้ ACK `ok`; health ตอบ firmware `1.1.0-mqtt-server` |
+| Native tests บน Linux | Policy + ArduinoJson + production downloader กับ fake platform ผ่าน รวม 12 transfer scenarios; mirrors ตรงกัน |
+| Coverage เฉพาะ downloader | `ota_download.h` 97.33% executed lines (75 lines); 100% branches executed, 75.58% branch outcomes taken; ไม่ใช่ coverage ของทั้ง firmware |
+| Windows builds | Firmware หลัก/bridge และ Android debug APK build ผ่าน; JVM suite 62 tests, failures 0, errors 0 |
+| Linux firmware build | Firmware หลักและ bridge build ผ่านด้วย Espressif32 6.9.0 / Arduino 2.0.17 |
+| LINE บนเซิร์ฟเวอร์ | `human-radar-alert.service` active/enabled; server journal ยืนยันส่ง LINE สำเร็จ; local notification app ปิดได้ |
+
+## จุดที่พบและแก้ระหว่างทดสอบ
+
+1. Android ไม่เปิด TLS แม้ใช้ port 8883 — เปลี่ยน transport selection ตาม project endpoint
+2. MQTT OTA ไม่ส่ง SHA/size ไปตรวจบนชิป — ส่ง metadata และใช้ downloader เดียวกันทั้ง firmware หลัก/bridge
+3. Retry CONNECT ไม่ส่งข้อมูลยืนยันตัวตนที่ใช้งานได้ — เกิด `NOT_AUTHORIZED` หลัง broker restart; สร้าง auth จาก immutable snapshot ใหม่ทุก retry
+4. Application connection state อัปเดตเฉพาะ initial connection — เพิ่ม lifecycle listener และ subscription restoration โดยไม่ลง callback ซ้ำ
+5. WebSocket transport dependencies ไม่อยู่ใน APK — เพิ่มโมดูล HiveMQ websocket ให้ตรง version ของ client
+6. Parser เดิมรับ string เฉพาะ compact JSON — คำสั่งมาตรฐานที่มี whitespace เคยทำให้บอร์ดเข้า AP; กู้ค่าจากสำรองสำเร็จ และแก้ parser พร้อมทดสอบซ้ำบนชิปจริง
+7. Bridge ไม่ยืนยัน pending OTA image — เพิ่ม confirmation ก่อนรอ WiFi เพื่อให้ OTA รอบถัดไปทำงานได้
+8. OTA GET เสี่ยง watchdog และ timeout หน่วยผิด — จำกัด handshake/connect/redirects และคืน watchdog subscription หลัง GET
+9. Log การ save config มี credentials — เปลี่ยนเป็นข้อความที่ไม่แสดง body
+10. Offline LWT อาจถูกใช้ยืนยัน firmware — ต้องเป็นสถานะ online และรุ่นตรงตามเงื่อนไข
+
+## เกณฑ์ที่ยังรอยืนยัน
+
+- การตัดไฟจริงระหว่าง OTA และการอัปเดตซ้ำหลังเสียบไฟกลับ: รอผู้ใช้ช่วยถอด/เสียบ USB ตามสัญญาณ LINE; ห้ามถือว่าผ่านจากการตัด HTTP connection
+- ข้อมูล UART/targets: sample 10 วินาทีไม่พบ targets แม้ health/config/OTA ทำงาน รอยืนยันว่า HLK-LD2450 ต่ออยู่หรือไม่ จึงยังไม่อ้างว่า UART → MQTT → radar rendering ผ่าน
+- สถานะ Git/ไฟล์งานบนเซิร์ฟเวอร์และชุดส่งต่อสุดท้าย: ตรวจซ้ำก่อนปิดงาน
+
+ไม่ได้ทดสอบการตัด WiFi router จริงหรือสร้าง firmware ที่ boot crash โดยจงใจ จึงไม่อ้างว่าครอบคลุมความขัดข้องทางไฟฟ้า/bootloader ทุกแบบ การทดสอบข้างต้นไม่ใช่การประกาศ release ใหม่บน GitHub หรือ rollout ไปทุกอุปกรณ์
+
+## ตำแหน่งหลักฐานและคำสั่งทำซ้ำ
+
+Windows เก็บ raw hardware logs/fixtures ที่ `%USERPROFILE%\.ssh\human-radar-backups` บางไฟล์มีข้อมูลลับ ห้าม commit ทั้งโฟลเดอร์ สำรอง partition/NVS ผ่าน checksum แล้ว แต่ full flash backup เคย checksum ไม่ผ่าน จึงไม่อ้างว่ามี full image backup ที่ใช้กู้คืนได้
+
+Linux native artifacts รอบที่ตรวจ coverage: `/tmp/human-radar-native.gHHhBq` เป็นไฟล์ชั่วคราว สร้างใหม่ได้ด้วย:
+
+```sh
+cd /root/project/Human_Radar_V2
+bash tools/test-native.sh
+```
+
+Android live tests เป็น opt-in ต้องเตรียม fixture ใน private app files ของ emulator/อุปกรณ์ทดสอบเอง ไม่มีรหัสจริงใน test source:
+
+```sh
+adb shell am instrument -w \
+  -e class com.example.radarhumanapplication.MqttReconnectInstrumentedTest \
+  -e brokerFixture mqtt-test-fixture.json -e brokerPort 8883 \
+  com.example.radarhumanapplication.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+เมื่อเห็น `READY_FOR_BROKER_RESTART` ให้ restart broker ทดสอบเพียงครั้งเดียว การรันบน production ต้องรู้ว่ามี client อื่นได้รับผลกระทบหรือไม่; ใน session นี้มีการประสานขั้นตอนกับอุปกรณ์ทดสอบ
