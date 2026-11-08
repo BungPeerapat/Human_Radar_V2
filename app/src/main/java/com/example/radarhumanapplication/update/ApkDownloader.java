@@ -10,6 +10,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.IOException;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -88,22 +89,25 @@ public class ApkDownloader {
         OutputStream out = null;
         InputStream in = null;
         try {
-            URL url = new URL(info.apkUrl);
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setConnectTimeout(CONNECT_TIMEOUT_MS);
-            conn.setReadTimeout(READ_TIMEOUT_MS);
-            conn.setInstanceFollowRedirects(true);
-            conn.setRequestProperty("Accept", "application/vnd.android.package-archive, */*");
-
-            int code = conn.getResponseCode();
-            if (code / 100 != 2) {
-                postError(cb, "HTTP " + code);
-                return;
+            try {
+                conn = openDownloadConnection(info.apkUrl);
+            } catch (IOException primary) {
+                String mirror = ManifestFetcher.apkMirror(info.apkUrl);
+                if (mirror == null || cancelled) throw primary;
+                Log.w(TAG, "Project APK unavailable; trying mirror with the original expected checksum", primary);
+                try {
+                    conn = openDownloadConnection(mirror);
+                } catch (IOException fallback) {
+                    IOException combined = new IOException("Primary: " + primary.getMessage()
+                            + "; mirror: " + fallback.getMessage(), fallback);
+                    combined.addSuppressed(primary);
+                    throw combined;
+                }
             }
 
             long total = conn.getContentLengthLong();
             if (total <= 0 && info.sizeBytes > 0) total = info.sizeBytes;
-            Log.i(TAG, "Downloading " + info.apkUrl + " (" + total + " bytes) -> " + outFile);
+            Log.i(TAG, "Downloading " + conn.getURL() + " (" + total + " bytes) -> " + outFile);
 
             in  = conn.getInputStream();
             out = new FileOutputStream(outFile);
@@ -175,6 +179,24 @@ public class ApkDownloader {
             if (conn != null) {
                 try { conn.disconnect(); } catch (Exception ignored) {}
             }
+        }
+    }
+
+    private HttpURLConnection openDownloadConnection(String url) throws IOException {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        boolean ready = false;
+        try {
+            connection.setConnectTimeout(CONNECT_TIMEOUT_MS);
+            connection.setReadTimeout(READ_TIMEOUT_MS);
+            connection.setInstanceFollowRedirects(true);
+            connection.setUseCaches(false);
+            connection.setRequestProperty("Accept", "application/vnd.android.package-archive, */*");
+            int code = connection.getResponseCode();
+            if (code / 100 != 2) throw new IOException("HTTP " + code);
+            ready = true;
+            return connection;
+        } finally {
+            if (!ready) connection.disconnect();
         }
     }
 

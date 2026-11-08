@@ -5,7 +5,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -332,7 +331,6 @@ public final class FirmwareUpdater {
     private final Context appContext;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final Gson gson = new Gson();
     private final FirmwareUploader uploader;
     private volatile boolean cancelled = false;
     private Runnable pendingMqttCancel;
@@ -359,9 +357,8 @@ public final class FirmwareUpdater {
             String deviceVersion = "";
             String err = null;
             try {
-                String body = httpGet(url);
-                Log.i(TAG, "Manifest fetched (" + body.length() + " bytes) from " + url);
-                manifest = gson.fromJson(body, FirmwareManifest.class);
+                manifest = new ManifestFetcher(FirmwareUpdater::httpGet).firmware(url);
+                Log.i(TAG, "Validated firmware manifest fetched for " + url);
                 if (manifest == null || !manifest.isUsable()) {
                     err = "Firmware manifest is malformed";
                 }
@@ -719,7 +716,7 @@ public final class FirmwareUpdater {
         main.post(() -> cb.onError(msg != null ? msg : "Unknown error"));
     }
 
-    private static String httpGet(String url) throws Exception {
+    private static String httpGet(String url) throws java.io.IOException {
         HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
         try {
             c.setRequestMethod("GET");
@@ -728,7 +725,7 @@ public final class FirmwareUpdater {
             c.setInstanceFollowRedirects(true);
             c.setRequestProperty("Accept", "application/json");
             int code = c.getResponseCode();
-            if (code / 100 != 2) throw new RuntimeException("HTTP " + code);
+            if (code / 100 != 2) throw new java.io.IOException("HTTP " + code);
             try (BufferedReader r = new BufferedReader(
                     new InputStreamReader(c.getInputStream(), StandardCharsets.UTF_8))) {
                 StringBuilder sb = new StringBuilder();

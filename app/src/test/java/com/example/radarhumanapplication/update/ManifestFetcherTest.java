@@ -67,4 +67,11 @@ public class ManifestFetcherTest {
             assertTrue(expected.getMessage().contains("mirror"));
         }
     }
+
+    @Test public void apkMirrorIsLimitedToProjectReleaseFiles() {
+        assertEquals(MIRROR + "latest.apk", ManifestFetcher.apkMirror(
+                "https://github.com/BungPeerapat/Human_Radar_V2/releases/download/v1.1.5/human-radar-v1.1.5.apk"));
+        assertNull(ManifestFetcher.apkMirror("https://custom.example/app.apk"));
+        assertNull(ManifestFetcher.apkMirror("https://github.com/other/repo/releases/download/v1.1.5/app.apk"));
+    }
 }

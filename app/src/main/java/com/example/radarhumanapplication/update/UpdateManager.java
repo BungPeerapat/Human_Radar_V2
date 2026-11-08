@@ -8,11 +8,11 @@ import android.os.Looper;
 import android.util.Log;
 
 import com.example.radarhumanapplication.BuildConfig;
-import com.google.gson.Gson;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -64,7 +64,6 @@ public class UpdateManager {
 
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final Gson gson = new Gson();
 
     private UpdateManager() {}
 
@@ -95,13 +94,11 @@ public class UpdateManager {
         Context app = ctx.getApplicationContext();
         io.execute(() -> {
             try {
-                String json = fetchString(url);
-                Log.i(TAG, "Manifest fetched (" + json.length() + " bytes)");
-                UpdateInfo info = gson.fromJson(json, UpdateInfo.class);
+                UpdateInfo info = new ManifestFetcher(this::fetchString).app(url);
                 prefs(app).edit().putLong(KEY_LAST_CHECK_MS, System.currentTimeMillis()).apply();
 
                 if (info == null || !info.isUsable()) {
-                    Log.w(TAG, "Manifest malformed: " + json);
+                    Log.w(TAG, "Manifest malformed");
                     deliver(cb, new Result(Status.ERROR, null, "Manifest is malformed"));
                     return;
                 }
@@ -148,7 +145,7 @@ public class UpdateManager {
         main.post(() -> cb.onResult(r));
     }
 
-    private String fetchString(String urlStr) throws Exception {
+    private String fetchString(String urlStr) throws IOException {
         HttpURLConnection conn = null;
         try {
             URL url = new URL(urlStr);
@@ -157,9 +154,11 @@ public class UpdateManager {
             conn.setReadTimeout(READ_TIMEOUT_MS);
             conn.setInstanceFollowRedirects(true);
             conn.setRequestProperty("Accept", "application/json");
+            conn.setRequestProperty("User-Agent", "HumanRadar/" + BuildConfig.VERSION_NAME);
+            conn.setUseCaches(false);
             int code = conn.getResponseCode();
             if (code < 200 || code >= 300) {
-                throw new RuntimeException("HTTP " + code);
+                throw new IOException("HTTP " + code);
             }
             try (InputStream is = conn.getInputStream();
                  BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {

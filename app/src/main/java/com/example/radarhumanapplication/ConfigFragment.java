@@ -1949,8 +1949,11 @@ public class ConfigFragment extends Fragment implements MqttService.ConfigAckLis
                                     + "Details: "
                                     + (result.errorMessage != null ? result.errorMessage : "unknown")
                                     + "\n\n"
-                                    + "Verify the phone has internet access and try again. Detailed "
-                                    + "logs are in adb logcat (tag: UpdateManager).")
+                                    + "The update service may be temporarily unavailable. Try again shortly "
+                                    + "or download the signed APK from the project server.")
+                            .setNeutralButton("Download APK", (dialog, which) ->
+                                    startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse("https://systemdeveloper.ddns.net/human-radar/updates/latest.apk"))))
                             .setPositiveButton("OK", null)
                             .show();
                     break;

@@ -238,6 +238,11 @@ jobs:
           fi
           ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
 
+      - name: Verify update mirror publication policy
+        run: |
+          bash -n tools/sync-update-mirror.sh
+          bash tools/test-update-mirror.sh
+
       - name: Inspect build outputs
         if: always()
         run: |
