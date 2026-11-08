@@ -60,3 +60,5 @@ Broker ใหม่ติดตั้งแล้ว แต่ยังต้อ
 
 - เผยแพร่ App v1.1.0 versionCode 91 ผ่าน Check Update ด้วยคีย์เซ็นเดิมแล้ว ผู้ใช้ยืนยันเชื่อมต่อ MQTT ได้
 - UART/targets หลัง restart โมดูลผ่าน 180 ข้อความ/32 วินาที; ยังรอไฟเลี้ยงหลัง OTA startup ที่พบ brownout เพิ่ม 2 ครั้งก่อนปิด rollout gate
+
+- Controlled restart ผ่าน 123.7 วินาที/695 targets แต่ controlled OTA หลังติดตั้งสำเร็จยังพบ brownout เพิ่ม 4 ครั้งโดยไม่พบ MQTT Restart แทรก; ผู้ใช้ยืนยันใช้ชุดจ่ายไฟในตัวอุปกรณ์ รอแยกทดสอบ USB charger ทางเดียวก่อนปิด gate

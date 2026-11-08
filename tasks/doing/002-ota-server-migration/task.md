@@ -62,3 +62,5 @@
 
 - Public release v1.1.0 ติดตั้งผ่าน GitHub HTTPS + MQTT สำเร็จและยังส่ง targets ได้ แต่มี brownout ช่วงบูต 2 ครั้ง (bo 740 → 742) จึงยังไม่ปิด gate ด้านไฟเลี้ยง
 - ปิด temporary HTTPS container และ UFW 9443 ของการทดสอบแล้ว เก็บ recovery binaries/private evidence ไว้
+
+- Controlled restart ผ่าน 123.7 วินาที/695 targets แต่ controlled OTA หลังติดตั้งสำเร็จยังพบ brownout เพิ่ม 4 ครั้งโดยไม่พบ MQTT Restart แทรก; ผู้ใช้ยืนยันใช้ชุดจ่ายไฟในตัวอุปกรณ์ รอแยกทดสอบ USB charger ทางเดียวก่อนปิด gate

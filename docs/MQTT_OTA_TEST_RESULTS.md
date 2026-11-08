@@ -58,11 +58,21 @@
 - ตรวจ public latest manifest ทั้ง update/firmware/bridge เป็น versionCode 91 และดาวน์โหลด public APK มาตรวจ hash/ขนาดตรงกับ CI; ผู้ใช้ยืนยันอัปเดตแอปแล้วเชื่อมต่อ MQTT ได้
 - CI แบบ Draft ได้รับการ review และผ่าน actionlint; live preflight tests ปฏิเสธ published-version collision และ draft target mismatch ตามคาด
 - หลัง publish ด้วย CLI มี tag-triggered run `42443479955` ถูก guard ปฏิเสธเพราะเวอร์ชันเผยแพร่แล้ว จึงไม่ build หรือเขียนทับ assets; signed draft run ก่อน publish เป็น run ที่สำเร็จ
-- เมื่อจ่ายไฟจากภายนอก มี health 15 samples ตลอด 126.3 วินาที: boot count 973, brownout counter 740 คงเดิม แต่ aggregate sample ไม่ผ่านเพราะ targets ขาดช่วง
+- หลังผู้ใช้เปลี่ยนการต่อไฟ มี health 15 samples ตลอด 126.3 วินาที: boot count 973, brownout counter 740 คงเดิม แต่ aggregate sample ไม่ผ่านเพราะ targets ขาดช่วง
 - หลังผู้ใช้ปิด–เปิดไฟ HLK-LD2450 (แหล่งจ่ายแยกและ GND ร่วมตามผู้ใช้ยืนยัน) รับ targets 180 ข้อความใน 32 วินาที, frame counter 1177 → 1535, error count 18 คงเดิม และ boot/brownout counter คงเดิม; sample นี้ผ่าน
 - สั่ง OTA ด้วย manifest/URL จริงจาก public GitHub release: ติดตั้ง `1.1.0` และตรวจ health หลัง reboot ได้ โดยไม่ใช้ USB data แต่พบ brownout เพิ่ม 2 ครั้ง (740 → 742), boots 973 → 976 ระหว่าง startup
 - หลังบูต v1.1.0 มี targets 82 ข้อความในช่วงตรวจ 30 วินาทีและ health ที่ uptime 16 → 46 โดยไม่รีเซ็ตเพิ่ม; ไม่ถือว่าผ่านเกณฑ์ไฟเลี้ยงสะอาด เพราะ brownout เพิ่มและข้อมูล UART ยังมี error 1 ครั้ง
 - ปิดและลบ container `human-radar-ota-test` แล้ว ลบเฉพาะ UFW rules 9443 ที่มี comment ของงานทดสอบ; broker/LINE service คงทำงาน เก็บ recovery binaries และ raw evidence ไว้ใน directory ที่ root อ่านได้
+
+## Controlled restart/OTA และการแยกชุดจ่ายไฟ
+
+- ผู้ใช้แจ้งว่าสั่ง Restart จากแอประหว่างรอบก่อน จึงไม่ใช้รอบนั้นสรุปสาเหตุของการรีเซ็ต และยืนยันว่าขณะนี้ ESP32 ใช้ชุดจ่ายไฟในตัวอุปกรณ์ ไม่ใช่ USB charger แยก
+- Controlled restart: ส่งคำสั่งหนึ่งครั้งแล้วตรวจ 123.7 วินาที; boots 981 → 982, reset reason 3 (software), brownout 746 คงเดิม, health 16 samples ไม่มี timeout/คำสั่ง Restart แทรก และ targets 695 ข้อความ error count 0; ผ่าน
+- Controlled OTA จาก public v1.1.0: ตรวจ SHA/commit แล้ว boots 985 → 986, reset reason 3 และ bo 749 คงเดิมในตอนกลับมาออนไลน์ แสดงว่าติดตั้งและรีบูต OTA สำเร็จ
+- ระหว่างติดตามหลัง OTA 64.5 วินาที พบ reset reason 9, bo 749 → 753, boots 986 → 991, health timeout 2 ครั้ง และ targets 227 ข้อความ; ไม่พบ Restart/OTA อื่นผ่าน MQTT ในช่วงนี้ จึงไม่ผ่านเกณฑ์ไฟเลี้ยงต่อเนื่อง
+- ไม่ปิด brownout detector และไม่ล้าง counters เพื่อกลบผล; กำลังขอทดสอบ ESP32 ผ่าน USB charger เพียงทางเดียว โดยตัดไฟจากชุดจ่ายในอุปกรณ์ที่เข้า ESP32 ก่อน
+- Schematic ที่อยู่ใน repository ระบุ LiPo 3.7V, TP4056 และ XL6009; datasheet ของ XL6009 ระบุ operating input 5–32V จึงเป็นข้อสงสัยที่ต้องเทียบกับวงจรจริง ไม่ใช่ผลวัดยืนยันแล้ว: https://www.mouser.com/catalog/specsheets/DFRobot_03312022_DF00123_DC_DC_Converter_XL60091_DataSheet.pdf
+- Raw evidence: `controlled-restart-result.json`, `controlled-published-ota-result.json` อยู่ในพื้นที่หลักฐานส่วนตัวของเซิร์ฟเวอร์/Windows ห้ามนำ config/NVS backups มารวมใน Git
 
 ## จุดที่พบและแก้ระหว่างทดสอบ
 
