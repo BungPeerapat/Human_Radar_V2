@@ -24,3 +24,14 @@
 เมื่อบอร์ดออนไลน์ เก็บ health และ get_log_buffer แบบอ่านอย่างเดียว แล้วเทียบเวลาเสียงค้างกับ WiFi/MQTT reconnect, ค่า beepLongMs และ uptime หากยืนยันว่า loop ถูก network block ให้แยกการจับจังหวะ GPIO ออกจาก network waits พร้อมทดสอบ disconnect/reconnect และ OTA regression ก่อน deploy firmware
 
 รอบนี้แก้ฝั่ง Android Touch lock ไม่เปลี่ยน firmware/ค่าบอร์ด ไม่สั่ง buzzer test หรือ reboot
+
+## ตรวจซ้ำ 2026-11-09 หลังผู้ใช้เปิดอินเทอร์เน็ต
+
+ผู้ใช้แจ้งว่าเปลี่ยนเป็นแหล่งจ่ายเสถียรและพบว่าแบตเตอรี่อ่อน จากนั้นยืนยันว่าเพิ่งเปิดอินเทอร์เน็ต จึงตรวจใหม่โดยไม่สั่ง reboot/OTA หรือเปลี่ยน config
+
+- health ตอบครบ 3 รอบ: uptime 32 → 40 → 48 วินาที, boot count 1797 คงที่, brownout lifetime count 1492 คงที่ในช่วงตรวจ
+- reset reason 1 (power-on), firmware 1.1.0, IP 10.252.73.75, RSSI -62/-55/-59 dBm, heap ประมาณ 152–154 KB
+- log รอบบูตระบุ WiFi พร้อมที่ 4.412 วินาที และ MQTT WSS เชื่อมสำเร็จที่ 11.870 วินาที จึงยืนยันการออนไลน์ด้วยข้อความตอบสดได้แล้ว
+- ขอ get_log_buffer สำเร็จที่ uptime ประมาณ 83.9 วินาที ไม่พบ boot ใหม่ใน log ชุดนี้ แต่ยังไม่พบ targets สดทั้งช่วง health และอ่าน log
+- ค่า brownout เป็นยอดสะสม ไม่ได้หมายความว่ามี 1492 ครั้งหลังเปลี่ยนแหล่งจ่าย การตรวจช่วงสั้นนี้ยังไม่ใช่หลักฐานความเสถียรระยะยาวหรือยืนยันว่า beep ค้างหายแล้ว
+- timestamp/up ใน ESP32 log ใช้ millis(); app export ปัจจุบันเติม s หลัง up โดยไม่หาร 1000 จึงห้ามตีความเลข log เหล่านี้เป็นวินาที ส่วน health.uptime หาร 1000 แล้ว
