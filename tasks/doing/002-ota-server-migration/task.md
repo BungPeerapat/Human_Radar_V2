@@ -31,7 +31,8 @@
 - [x] ทดสอบ URL ผิด, download ขาดช่วง, hash ไม่ตรง, image ใหญ่เกิน, HTTPS stream ขาดและ broker restart บนบอร์ดจริง
 - [ ] ทดสอบการตัดไฟจริงระหว่าง OTA และการอัปเดตอีกครั้งหลังเสียบไฟกลับ รอผู้ใช้ตามการเรียกผ่าน LINE
 - [x] ยืนยันหลังอัปเดต, manual rollback และ bridge recovery ว่ายังสั่ง OTA รอบถัดไปได้ พร้อม WiFi/MQTT settings ที่ใช้งานได้
-- [ ] เขียน migration runbook, recovery runbook และ checklist ก่อน release; แก้ปัญหาที่พบก่อนอนุญาต rollout งาน `001`
+- [x] เขียน migration runbook, recovery runbook และ checklist ก่อน release ใน `docs/OTA_SERVER_MIGRATION.md`
+- [ ] ตรวจรับ hardware gates และแก้ปัญหาที่พบก่อนอนุญาต rollout งาน `001`
 
 ## เกณฑ์ตรวจรับ
 

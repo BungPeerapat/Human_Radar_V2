@@ -86,6 +86,28 @@ Hash ยืนยันว่าไฟล์ตรงกับ metadata ที�
 - Bridge อ่าน WiFi/NVS เดิมและไม่มีหน้า AP ตั้งค่า ถ้า WiFi ใช้ไม่ได้อาจต้อง USB
 - Initial provisioning, boot ไม่ขึ้น หรือเข้าถึงเครือข่ายไม่ได้ยังอาจต้องใช้ USB; การพัฒนาผ่าน SSH ไม่ทำให้มองเห็น COM port ของ Windows อัตโนมัติ
 
+## ขั้นตอนกู้คืนเมื่ออัปเดตมีปัญหา
+
+1. เก็บ request_id, error ACK, รุ่นก่อนอัปเดต และ status/info หลังเหตุการณ์ก่อนส่งคำสั่งซ้ำ อย่าถือว่า progress 100% เท่ากับติดตั้งสำเร็จ
+2. หากบอร์ดยังออนไลน์แต่ดาวน์โหลดไม่ผ่าน ให้ตรวจ URL/HTTPS, SHA-256, sizeBytes และขนาด slot จาก manifest กับไฟล์จริง แก้สาเหตุแล้วส่ง OTA ใหม่พร้อม request_id ใหม่
+3. หาก MQTT ใช้ไม่ได้แต่ LAN ยังเข้าได้ ตรวจ `GET /health` และ `GET /api/version` ที่ IP ปัจจุบันของบอร์ด ใช้หน้าเว็บ/Android HTTP upload กับ image ที่ตรวจ hash แล้วเพื่อกู้ firmware โดยรักษาค่า WiFi/NVS
+4. ใช้ `POST /api/firmware-rollback` เฉพาะเมื่อทราบว่า inactive slot มี image สมบูรณ์ที่ต้องการกลับไป การเขียน OTA ที่ล้มเหลวอาจทับ slot นั้นแล้ว หลังสั่งต้องตรวจรุ่นและ health ใหม่
+5. หาก firmware หลักทำงานไม่ได้แต่ bridge ยังเข้าถึงได้ ให้ OTA image หลักผ่าน bridge พร้อม metadata ที่ถูกต้อง โดยใช้ project TLS endpoint; bridge ไม่มีหน้า AP ตั้งค่า
+6. หากบูตไม่ขึ้นหรือไม่มีทั้ง LAN/MQTT ให้ใช้ USB กับเครื่องที่เสียบบอร์ดและแผนกู้คืนเฉพาะอุปกรณ์ ห้ามใช้ full-flash backup ที่ checksum ไม่ผ่านหรือ factory reset เพียงเพื่อทดลองแก้เครือข่าย
+
+สำหรับการตัดไฟทดสอบ ต้องได้รับสัญญาณว่าผู้ใช้พร้อมก่อนเริ่ม รอ progress ที่แสดงว่ากำลังเขียนจริงแล้วจึงเรียกผ่าน LINE ให้ถอด USB ประมาณ 5 วินาทีและเสียบกลับโดยไม่กด BOOT เก็บรุ่น/boot count ก่อนและหลัง ตรวจว่ากลับมาออนไลน์ แล้วอัปเดตอีกครั้งจนยืนยันรุ่นใหม่ได้ หากผู้ใช้ถอดไม่ทันก่อน commit ให้บันทึกว่าไม่ใช่การทดสอบตัดไฟระหว่างเขียนและยังไม่ผ่านเกณฑ์นี้
+
+## Checklist ก่อน release และ rollout
+
+- [x] Android, firmware หลัก, Arduino tree และ bridge มี implementation ตรงกันและ build/test ตามผลที่บันทึก
+- [x] ตรวจ auth/ACL, TLS/WSS, broker restart และ OTA/recovery บนบอร์ดทดสอบตามผลในเอกสาร
+- [x] Git checkout บนเซิร์ฟเวอร์รับ implementation และเอกสารที่ commit แล้ว; ไม่ได้เผยแพร่ release ใหม่บน GitHub
+- [ ] ผ่านการตัดไฟระหว่างเขียนและ OTA รอบถัดไปบนบอร์ดจริง พร้อม raw evidence
+- [ ] มี UART targets จาก HLK-LD2450 ผ่าน MQTT ถึงแอปจริง
+- [ ] หลัง hardware gates ผ่าน ให้คืนค่าบอร์ดเป็น transport ที่ต้องการใช้งาน ตรวจ health/config/OTA และคง provisioning ของอุปกรณ์
+- [ ] ปิด HTTPS container ทดสอบและลบ UFW rule 9443 เฉพาะงานนี้ หลังไม่มีการทดสอบ/กู้คืนค้าง
+- [ ] สรุปผลสุดท้าย ย้าย Tasks 001–002 ไป done และอัปเดต checkout บนเซิร์ฟเวอร์ก่อน rollout
+
 ## หลักฐานการตรวจรับ
 
 ดูผลปัจจุบันใน `docs/MQTT_OTA_TEST_RESULTS.md` และ `tasks/doing/` หรือ `tasks/done/` การ build, host simulation และ static review ใช้เสริมหลักฐาน แต่ไม่แทนการอัปเดตบน ESP32 จริง
