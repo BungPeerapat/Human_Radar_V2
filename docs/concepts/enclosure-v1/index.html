@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#eaece3">
+  <title>Human Radar — Enclosure concept 01</title>
+  <meta name="description" content="แบบร่างกล่อง Human Radar พร้อมโมเดล 3D หมุนดูและแยกชิ้นส่วน สำหรับ ESP32, LiPo และ HLK-LD2450">
+  <meta property="og:title" content="Human Radar / Enclosure concept 01">
+  <meta property="og:description" content="สำรวจกล่องแบบ 3D พร้อมภาพคอนเซปต์และตำแหน่งอุปกรณ์ภายใน">
+  <meta property="og:image" content="https://systemdeveloper.ddns.net/human-radar/concepts/enclosure-v1/assets/concept-engineering.png">
+  <meta property="og:url" content="https://systemdeveloper.ddns.net/human-radar/concepts/enclosure-v1/">
+  <link rel="stylesheet" href="style.css">
+  <script defer src="viewer.bundle.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="wordmark" href="#top" aria-label="Human Radar หน้าต้นเอกสาร"><span class="radar-mark" aria-hidden="true">◒</span> HUMAN RADAR<span class="version">V2</span></a>
+    <span class="mono issue">ENCLOSURE STUDY <b>01 / 2026</b></span>
+  </header>
+  <main id="top">
+    <section class="intro">
+      <div>
+        <p class="eyebrow"><span></span> CONCEPT 01 · PORTABLE SENSOR</p>
+        <h1>A small shell.<br><em>A clear purpose.</em></h1>
+        <p class="lead">ร่างกล่องอุปกรณ์ให้เห็นภาพก่อนสร้างจริง<br>เรดาร์ด้านหน้า · ESP32 ตรงกลาง · แบต LiPo ด้านหลัง</p>
+      </div>
+      <div class="envelope">
+        <span class="mono">กรอบขนาดตั้งต้น / W × H × D</span>
+        <strong>78 <i>×</i> 112 <i>×</i> 46</strong>
+        <span class="mono">mm · ขนาดสมมติสำหรับคอนเซปต์</span>
+        <p>ยังไม่ใช่แบบพร้อมพิมพ์ 3D<br>ต้องวัดบอร์ด แบต และช่องสายจริงก่อน</p>
+      </div>
+    </section>
+
+    <section class="model-section" aria-labelledby="model-title">
+      <div class="section-line"><h2 id="model-title"><span>01</span> สำรวจตัวกล่อง</h2><span class="mono">INTERACTIVE / DRAG TO ROTATE</span></div>
+      <div class="model-layout">
+        <div class="stage-wrap">
+          <div class="stage-top">
+            <div class="segmented" role="group" aria-label="รูปแบบแสดงโมเดล">
+              <button class="active" data-mode="assembled" aria-pressed="true">ประกอบแล้ว</button>
+              <button data-mode="cutaway" aria-pressed="false">เปิดดูภายใน</button>
+              <button data-mode="exploded" aria-pressed="false">แยกชิ้นส่วน</button>
+            </div>
+            <span id="render-status" class="render-status" role="status">กำลังเตรียมโมเดล 3D…</span>
+          </div>
+          <div id="stage" tabindex="0" role="region" aria-label="โมเดลกล่อง 3D ลากนิ้วหรือเมาส์เพื่อหมุน ใช้สองนิ้วหรือ scroll เพื่อซูม">
+            <div id="webgl-fallback" hidden><img src="assets/concept-engineering.png" alt="ภาพคอนเซปต์กล่องและมุมแยกชิ้นส่วน"><p>เบราว์เซอร์นี้เปิด 3D ไม่ได้ ยังดูภาพคอนเซปต์ด้านล่างได้ครับ</p></div>
+            <div class="stage-caption"><span class="mono">HUMAN RADAR / DESIGN V1</span><span>ลากเพื่อหมุน · เลื่อนเพื่อซูม</span></div>
+          </div>
+          <div class="stage-tools">
+            <div class="view-buttons" role="group" aria-label="มุมกล้อง">
+              <button data-view="iso" title="มุมสามมิติ">3D</button>
+              <button data-view="front">หน้า</button>
+              <button data-view="side">ข้าง</button>
+              <button data-view="back">หลัง</button>
+            </div>
+            <label class="check"><input id="dimensions" type="checkbox" checked> ขนาด</label>
+            <label class="check"><input id="spin" type="checkbox"> หมุนช้า ๆ</label>
+            <button id="reset" class="text-button">คืนมุมเริ่มต้น ↺</button>
+          </div>
+          <div class="explode-control"><label for="explode">ระยะแยกชิ้นส่วน <output id="explode-value">0%</output></label><input id="explode" type="range" min="0" max="100" value="0" aria-label="ระยะแยกชิ้นส่วน"></div>
+        </div>
+
+        <aside class="parts">
+          <p class="mono small-heading">INSIDE THE ENCLOSURE</p>
+          <div class="part-list" role="group" aria-label="เลือกชิ้นส่วนเพื่ออ่านแนวคิด">
+            <button class="part active" data-part="front" aria-pressed="true"><span>01</span><b>ฝาหน้า / RF window</b><i>↗</i></button>
+            <button class="part" data-part="radar" aria-pressed="false"><span>02</span><b>Radar HLK-LD2450</b><i>↗</i></button>
+            <button class="part" data-part="esp32" aria-pressed="false"><span>03</span><b>ESP32 board</b><i>↗</i></button>
+            <button class="part" data-part="battery" aria-pressed="false"><span>04</span><b>LiPo แบบแบน · 1S</b><i>↗</i></button>
+            <button class="part" data-part="power" aria-pressed="false"><span>05</span><b>พื้นที่ชุดจ่ายไฟ</b><i>↗</i></button>
+            <button class="part" data-part="rear" aria-pressed="false"><span>06</span><b>ฝาหลังถอดซ่อม</b><i>↗</i></button>
+          </div>
+          <div class="part-note" aria-live="polite"><span id="part-type" class="mono">01 / ENCLOSURE</span><h3 id="part-title">ผิวหน้าเรียบ ให้เรดาร์มองผ่าน</h3><p id="part-description">แผ่นพลาสติกด้านบนปิดเสาอากาศ ไม่ใช้ตะแกรงโลหะหรือสติกเกอร์ฟอยล์ในแนวตรวจจับ ความหนาและระยะจริงต้องทดลอง RF ก่อนผลิต</p></div>
+          <div class="download-tools"><button id="save-image">บันทึกภาพ 3D ↓</button><button id="export-model">ดาวน์โหลดโมเดล GLB ↓</button><a class="model-file" href="human-radar-concept-01.glb" download>ไฟล์โมเดลร่างที่บันทึกไว้ (.glb) ↗</a><p id="download-status" role="status"></p></div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="concept-section" aria-labelledby="concept-title">
+      <div class="section-line"><h2 id="concept-title"><span>02</span> ภาพคอนเซปต์</h2><span class="mono">AI-GENERATED / VISUAL DIRECTION</span></div>
+      <a class="concept-image" href="assets/concept-engineering.png" target="_blank" rel="noopener"><img src="assets/concept-engineering.png" alt="คอนเซปต์กล่องพลาสติกสีกราไฟต์ แผ่นหน้าเรดาร์สีอ่อน พร้อมมุมแยกฝาหน้า บอร์ด ESP32 เรดาร์ แบต LiPo และฝาหลัง" width="1586" height="992" loading="lazy"></a>
+      <div class="caption-row"><p>ภาพสร้างด้วย AI เพื่ออธิบายภาษาการออกแบบ ไม่ใช่ภาพถ่ายชิ้นงานจริง<br>รูปอุปกรณ์และระยะในภาพอาจคลาดเคลื่อน ใช้ตัวเลขในตารางเป็นสมมติฐานของโมเดล</p><a href="assets/concept-engineering.png" download>ดาวน์โหลดภาพต้นฉบับ ↗</a></div>
+    </section>
+
+    <section class="engineering" aria-labelledby="engineering-title">
+      <div><p class="eyebrow">DESIGN INTENT</p><h2 id="engineering-title">พื้นที่เล็ก ๆ<br>ที่แต่ละชิ้นมีที่ของมัน</h2><p>เรดาร์วางด้านบน แยกช่องมองออกจากวงจรและแบต ฝาหลังเปิดเข้าถึงการเดินสายได้ เผื่อช่องเสียบไฟกับรูเสียงไว้ที่ส่วนล่าง</p><div class="principle"><b>12.4 mm</b><span>ระยะตั้งต้นระหว่างเสาอากาศเรดาร์กับผิวด้านในของฝาหน้า อิงคำแนะนำผู้ผลิต แต่ยังต้องทดลองกับวัสดุจริง</span></div></div>
+      <div class="specs">
+        <table><caption>ขนาดและสมมติฐานในโมเดล</caption><thead><tr><th scope="col">ชิ้นส่วน</th><th scope="col">ขนาด / แนวคิด</th><th scope="col">สถานะ</th></tr></thead><tbody>
+          <tr><th scope="row">กรอบกล่อง</th><td>78 × 112 × 46 mm</td><td>สมมติ</td></tr>
+          <tr><th scope="row">HLK-LD2450</th><td>44 × 15 mm · แนวนอน</td><td>อิงผู้ผลิต¹</td></tr>
+          <tr><th scope="row">ESP32 dev board</th><td>28 × 54 mm โดยประมาณ</td><td>ต้องวัดรุ่นจริง</td></tr>
+          <tr><th scope="row">LiPo ทรงแบน 1S</th><td>35 × 55 × 6 mm โดยประมาณ</td><td>ต้องวัดก้อนจริง</td></tr>
+          <tr><th scope="row">ผนัง / RF window</th><td>ผนัง 2 mm · หน้าต่าง 1.2 mm</td><td>ต้องทดลองวัสดุ</td></tr>
+          <tr><th scope="row">ชุดจ่ายไฟ / พอร์ต</th><td>สำรองช่อง 46 × 22 mm</td><td>ไม่ใช่วงจรใหม่</td></tr>
+        </tbody></table>
+        <p class="note">ขนาด แรงดัน และความจุของแบตจะยึดตามป้ายจริง โมเดลนี้แสดงแพ็กเกจและพื้นที่ติดตั้ง ส่วนวงจรชาร์จและเวลาทำงานต้องพิจารณาจากอุปกรณ์จริง</p>
+      </div>
+    </section>
+
+    <section class="next-step"><span class="mono">BEFORE A PRINTABLE CAD</span><div><h2>ร่างนี้ใช้คุยรูปทรงและการจัดวาง</h2><p>ขั้นถัดไปวัดขนาดจริงของบอร์ด แบต ปลั๊ก และชุดจ่ายไฟ รวมตำแหน่งรูยึด จากนั้นปรับระยะสาย พื้นที่เผื่อแบต ความร้อน และฝาหน้าเรดาร์ ก่อนทำแบบ STL/STEP สำหรับผลิตจริง ไม่ได้อ้างการกันน้ำ ความทนกระแทก หรือประสิทธิภาพ RF ที่ผ่านการทดสอบ</p></div></section>
+    <footer><span class="mono">HUMAN RADAR V2 / CONCEPT 01</span><p>¹ <a href="https://h.hlktech.com/download/HLK-LD2450-24G/1/HLK%20LD2450%201T2R%E8%BF%90%E5%8A%A8%E7%9B%AE%E6%A0%87%E6%A3%80%E6%B5%8B%E8%BF%BD%E8%B8%AA%E6%A8%A1%E7%BB%84%E8%AF%B4%E6%98%8E%E4%B9%A6%20V1.02%20.pdf" target="_blank" rel="noopener">คู่มือ HLK-LD2450 · ขนาด / แนวทางฝาครอบเสาอากาศ</a><br>3D: Three.js r170 · <a href="assets/THREE-LICENSE.txt">MIT license</a> · ขนาดทั้งหมดเป็น mm</p></footer>
+  </main>
+</body>
+</html>
