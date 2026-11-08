@@ -9,7 +9,7 @@ GitHub latest/tagged download URLs ตอบ 504 ทั้งจาก Windows �
 - [x] Reproduce HTTP 504 และเตรียม signed APK v1.1.4 สำรองบน HTTPS server พร้อมแจ้ง LINE
 - [x] App/firmware/bridge checks fallback ไป mirror เมื่อ project release URL ล้มเหลว; ไม่เปลี่ยน custom channel
 - [x] Mirror sync release สาธารณะผ่าน GitHub API ตรวจ hash/size และสลับชุดไฟล์เมื่อครบเท่านั้น
-- [ ] Tests/review, release v1.1.5, ตรวจ public artifacts, push/sync และแจ้ง LINE
+- [x] Tests/review, release v1.1.5, ตรวจ public artifacts, push/sync และแจ้ง LINE
 
 ## หลักฐาน
 
@@ -25,4 +25,9 @@ Bootstrap https://systemdeveloper.ddns.net/human-radar/updates/human-radar-v1.1.
 - Code review ผ่าน ไม่มี finding ค้าง; binary fallback test ใช้ release ที่ไม่มีอยู่เพื่อบังคับเส้นทางสำรอง แม้ GitHub กลับมาปกติแล้ว (ผ่าน 13.259 s)
 - Sync source 9d7e66c ไป SSH แล้ว ติดตั้ง/enable timer 5 นาทีและ service รันสำเร็จโดยใช้ v1.1.4
 - CI 42466437764 หยุดก่อน compile เพราะ Gradle distribution redirect timeout; เพิ่ม API fallback ที่ตรวจ official Gradle 8.9 checksum แล้ว (136,114,148 bytes, SHA ตรง)
-- รอ release v1.1.5 รอบใหม่และตรวจ artifacts/LINE
+- CI 42466883878 success; เผยแพร่ v1.1.5 / versionCode 105 จาก 1457cfc
+- Mirror service sync v1.1.5-162c1e919f30 สำเร็จ และ timer active/enabled
+- ตรวจ public mirror app/firmware/bridge manifests เทียบ GitHub API และ binary hash/size ผ่าน; latest.apk ตรง v1.1.5, signer ตรงรุ่นก่อน
+- APK 8,170,067 bytes, SHA-256 ac9ad7e2d86a7f8635fc39406bcb47c9e853fa596c739f97f5250b25ed168a9e; ตรวจ fallback/Touch lock/รหัสโปรเจกต์ใน APK แล้ว
+- Push/sync SSH และยืนยัน LINE ลิงก์พร้อมติดตั้งจาก server journal แล้ว
+- แอปเดิมต้องติดตั้ง APK จาก server ทับหนึ่งครั้งระหว่าง GitHub download outage; รุ่นใหม่มี fallback อัตโนมัติ

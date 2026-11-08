@@ -7,8 +7,8 @@ tasks/
   todo/
   doing/
     006-beep-reconnect-timing/task.md
-    007-update-server-fallback/task.md
   done/
+    007-update-server-fallback/task.md
     005-touch-lock-input-guard/task.md
     004-radar-fullscreen/task.md
     003-radar-touch-lock/task.md

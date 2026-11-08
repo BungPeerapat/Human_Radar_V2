@@ -38,6 +38,8 @@ journalctl -u human-radar-update-mirror.service -n 30 --no-pager
 - Android: simulated 504 followed by live HTTPS mirror and real APK download/checksum verification; actual manual UpdateManager check; Radar touch/fullscreen/autofill regressions.
 - No firmware was flashed to the offline ESP32 during this incident.
 
-The timer is enabled and active; its sandboxed service successfully verified and published v1.1.4. Release v1.1.5 is pending final artifact checks.
+The timer is enabled and active; its sandboxed service successfully verified and published v1.1.4 and v1.1.5. CI 42466883878 published v1.1.5 / versionCode 105 from 1457cfc. Public mirror app/firmware/bridge manifests match the GitHub API version/hash/size fields, and downloaded mirror binaries passed their declared checksums and sizes.
+
+APK: 8,170,067 bytes; SHA-256 ac9ad7e2d86a7f8635fc39406bcb47c9e853fa596c739f97f5250b25ed168a9e. The production certificate matches earlier releases; latest.apk returns the same bytes. Fallback classes, Touch lock and the project password were confirmed in the APK. The ready link was delivered through server-side LINE and confirmed in its journal.
 
 CI run 42466437764 initially stopped before Java compilation because the Gradle distribution download also timed out through its GitHub redirect. The workflow now prepares the same Gradle 8.9 ZIP using the official download endpoint with a pinned asset-API fallback, verifies the [official Gradle checksum](https://gradle.org/release-checksums/), and invokes that verified executable. The API download was independently verified as 136,114,148 bytes with SHA-256 d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab.
