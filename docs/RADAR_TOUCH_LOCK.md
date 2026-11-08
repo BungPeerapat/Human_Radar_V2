@@ -50,3 +50,7 @@ Push GitHub, sync SSH ผ่าน Tailscale และยืนยันส่�
 เพิ่มการตรวจด้วย pointer tap จริงที่ปุ่ม Touch Lock ไม่ใช้เฉพาะ performClick เพื่อเปิดล็อก จากนั้นทดสอบเมนู, direct rotate/snapshot action และการคืนสถานะ ข้อมูลเรดาร์ทดสอบยังอัปเดตผ่าน dispatcher ขณะ view ถูกปิด input
 
 ทดสอบบน emulator ไม่ใช่หลักฐานว่ารายงานเฉพาะ vivo หายแล้ว งาน 008 จะรอผู้ใช้ตรวจรับหลังส่งรุ่นใหม่ ไม่ตรวจเซนเซอร์เพิ่มเติมตามผู้ใช้ยืนยัน
+
+ส่งมอบ v1.1.6 / versionCode 109 จาก 241a3ec, CI 42517639575 success; public mirror sync v1.1.6-05fc86985cdd แล้ว ตรวจ app/firmware/bridge hash/size เทียบ GitHub API ผ่าน APK 8,170,603 bytes, SHA-256 594498f9e5148608cb5c7e0404a16351e23acc94a891799689e531c6375983ab ลายเซ็นตรงรุ่นก่อน และยืนยัน enabled-state fence/guarded actions ใน APK จริง
+
+ส่ง LINE ขอให้ตรวจรับบน vivo และยืนยัน server journal แล้ว Firmware บน ESP32 ที่ตอบ health ล่าสุดยัง 1.1.0 (uptime 1634 s) ไม่ได้สั่ง OTA ในงาน Android นี้
