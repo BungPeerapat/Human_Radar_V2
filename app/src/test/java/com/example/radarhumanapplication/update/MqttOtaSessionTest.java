@@ -5,6 +5,13 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class MqttOtaSessionTest {
+    @Test public void offlineStatusCannotVerifyAnInstalledImage() {
+        assertFalse(MqttOtaSession.isOnlineVersion("2.0", "2.0", "offline"));
+        assertFalse(MqttOtaSession.isOnlineVersion("2.0", "2.0", "unknown"));
+        assertFalse(MqttOtaSession.isOnlineVersion("2.0", "1.0", "online"));
+        assertFalse(MqttOtaSession.isOnlineVersion("2.0", "", "online"));
+        assertTrue(MqttOtaSession.isOnlineVersion("2.0", "2.0", "online"));
+    }
     private JsonObject ack(String id, String status, boolean restarting) {
         JsonObject ack = new JsonObject();
         ack.addProperty("request_id", id); ack.addProperty("status", status);
