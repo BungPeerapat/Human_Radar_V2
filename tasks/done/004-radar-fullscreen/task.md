@@ -11,8 +11,8 @@
 - [x] ออกจาก Full Screen แล้วคืน toolbar, navigation, insets และขนาด Radar ถูกต้อง
 - [x] มีวิธีใช้/ปลด Touch lock ในหน้า Radar โดยไม่ทำให้ผู้ใช้ติดอยู่ใน Full Screen
 - [x] ตรวจการหมุนจอ, activity recreation และ gesture navigation
-- [ ] ทดสอบ UI จริง, review, push GitHub, sync SSH และ release ผ่าน Check Update
-- [ ] แจ้งผู้ใช้ผ่าน LINE บน SSH server
+- [x] ทดสอบ UI จริง, review, push GitHub, sync SSH และ release ผ่าน Check Update
+- [x] แจ้งผู้ใช้ผ่าน LINE บน SSH server
 
 ## ลำดับงาน
 
@@ -27,4 +27,7 @@
 - GREEN: JVM tests/build ผ่าน; UI 7 tests แนวนอน 25.573 วินาที และแนวตั้ง 22.562 วินาที
 - ตรวจภาพการหมุนจอจริง, gesture navigation, fullscreen + touch lock recreation และ Back priority
 - Reviewer ตรวจแล้ว APPROVE ไม่มี finding ค้าง; รายละเอียด docs/RADAR_FULLSCREEN.md
-- รอ release v1.1.3, ตรวจ artifacts, sync SSH และแจ้ง LINE ก่อนย้าย done
+- เผยแพร่ v1.1.3 / versionCode 98 จาก 8e59159; CI 42449553105 success
+- Public app/firmware/bridge manifests และ binary hash/size ผ่าน APK 8,168,971 bytes, SHA-256 fa5bd156f3ce1e068dba62908fb74b5686aee48e510d9342ce868d2d061c68b9; signer ตรงรุ่นก่อน และตรวจรหัสโปรเจกต์/Touch lock ใน APK แล้ว
+- Push GitHub, sync SSH ผ่าน Tailscale และยืนยัน LINE สำเร็จจาก server journal
+- ทดสอบ Full Screen บน Android emulator API 36; รอ feedback การใช้งานบนโทรศัพท์ผู้ใช้หลัง Check Update

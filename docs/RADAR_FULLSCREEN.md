@@ -27,4 +27,8 @@ Android อาจแสดงคำแนะนำการใช้งานเ
 
 ## การส่งมอบ
 
-เตรียมเผยแพร่ผ่าน Check Update เป็น v1.1.3 หลัง CI และตรวจ public artifacts สำเร็จ
+เผยแพร่ผ่าน Check Update แล้วเป็น v1.1.3 / versionCode 98 จาก commit 8e59159; CI 42449553105 success
+
+ตรวจ public app/firmware/bridge manifests และ binary hash/size ผ่าน APK 8,168,971 bytes, SHA-256 fa5bd156f3ce1e068dba62908fb74b5686aee48e510d9342ce868d2d061c68b9 ลายเซ็นตรงรุ่นก่อน และตรวจว่ามีรหัสโปรเจกต์กับ Touch lock ใน APK แล้ว
+
+Push GitHub, sync ผ่าน Tailscale ไป SSH server และยืนยันการส่ง LINE จาก server journal สำเร็จ รุ่นนี้ตรวจการเปลี่ยนแปลงฝั่ง Android บน emulator; ยังไม่มีผลยืนยัน Full Screen จากโทรศัพท์ผู้ใช้

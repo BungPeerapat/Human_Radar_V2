@@ -6,8 +6,8 @@
 tasks/
   todo/
   doing/
-    004-radar-fullscreen/task.md
   done/
+    004-radar-fullscreen/task.md
     003-radar-touch-lock/task.md
     001-primary-mqtt/task.md
     002-ota-server-migration/task.md
