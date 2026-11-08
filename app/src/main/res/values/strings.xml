@@ -11,4 +11,5 @@
     <string name="radar_touch_unlock_hint">Touch locked. Hold the unlock button for two seconds.</string>
     <string name="radar_touch_unlock_button">Hold 2 seconds to unlock</string>
     <string name="radar_touch_unlock_holding">Keep holding…</string>
+    <string name="radar_exit_fullscreen">Exit full screen</string>
 </resources>

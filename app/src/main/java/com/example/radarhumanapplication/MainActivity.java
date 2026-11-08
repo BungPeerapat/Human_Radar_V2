@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.view.WindowManager;
 
 import androidx.activity.EdgeToEdge;
 import androidx.activity.OnBackPressedCallback;
@@ -15,6 +16,8 @@ import androidx.core.content.ContextCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.fragment.app.Fragment;
 
 import com.example.radarhumanapplication.alerts.AlertManager;
@@ -36,6 +39,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String STATE_ACTIVE_TAG = "active_tag";
     private static final String STATE_RADAR_TOUCH_LOCKED = "radar_touch_locked";
     private static final String STATE_PENDING_UPDATE = "pending_update";
+    private static final String STATE_RADAR_FULLSCREEN = "radar_fullscreen";
 
     private RadarFragment radarFragment;
     private DashboardFragment dashboardFragment;
@@ -45,6 +49,10 @@ public class MainActivity extends AppCompatActivity {
     private Fragment activeFragment;
     private RadarTouchLockController touchLock;
     private UpdateInfo pendingUpdate;
+    private boolean radarFullscreen;
+    private int normalCutoutMode;
+    private int normalSystemBarsBehavior;
+    private OnBackPressedCallback fullscreenBack;
 
     private final ActivityResultLauncher<String> notifPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {});
@@ -53,6 +61,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         if (savedInstanceState != null) {
+            radarFullscreen = savedInstanceState.getBoolean(STATE_RADAR_FULLSCREEN, false);
             String savedUpdate = savedInstanceState.getString(STATE_PENDING_UPDATE);
             if (savedUpdate != null) {
                 try {
@@ -65,6 +74,11 @@ public class MainActivity extends AppCompatActivity {
         }
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
+        normalSystemBarsBehavior = WindowCompat.getInsetsController(getWindow(),
+                getWindow().getDecorView()).getSystemBarsBehavior();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            normalCutoutMode = getWindow().getAttributes().layoutInDisplayCutoutMode;
+        }
 
         // Bind app context to MqttService so it can spin up the foreground service.
         MqttService.getInstance().attachContext(getApplicationContext());
@@ -89,7 +103,8 @@ public class MainActivity extends AppCompatActivity {
         }
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
-            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            Insets systemBars = radarFullscreen ? Insets.NONE
+                    : insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
             return insets;
         });
@@ -120,6 +135,13 @@ public class MainActivity extends AppCompatActivity {
         }
 
         BottomNavigationView bottomNav = findViewById(R.id.bottom_nav);
+        fullscreenBack = new OnBackPressedCallback(false) {
+            @Override
+            public void handleOnBackPressed() {
+                radarFragment.exitFullscreen();
+            }
+        };
+        getOnBackPressedDispatcher().addCallback(this, fullscreenBack);
         OnBackPressedCallback touchLockBack = new OnBackPressedCallback(false) {
             @Override
             public void handleOnBackPressed() {
@@ -168,6 +190,7 @@ public class MainActivity extends AppCompatActivity {
             // Sync bottom nav highlight with restored active fragment
             bottomNav.setSelectedItemId(menuIdForFragment(activeFragment));
         }
+        setRadarFullscreen(radarFullscreen && activeFragment == radarFragment);
 
         // Background update check (debounced 6h inside UpdateManager)
         UpdateManager.getInstance().checkAuto(this, result -> {
@@ -183,6 +206,7 @@ public class MainActivity extends AppCompatActivity {
         super.onSaveInstanceState(outState);
         outState.putString(STATE_ACTIVE_TAG, tagForFragment(activeFragment));
         outState.putBoolean(STATE_RADAR_TOUCH_LOCKED, touchLock != null && touchLock.isLocked());
+        outState.putBoolean(STATE_RADAR_FULLSCREEN, radarFullscreen);
         if (pendingUpdate != null) outState.putString(STATE_PENDING_UPDATE, new Gson().toJson(pendingUpdate));
     }
 
@@ -211,6 +235,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onPostResume() {
         super.onPostResume();
+        if (radarFullscreen) applyRadarFullscreenWindow();
         showPendingUpdateIfUnlocked();
     }
 
@@ -224,6 +249,7 @@ public class MainActivity extends AppCompatActivity {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (!hasFocus && touchLock != null) touchLock.cancelPendingHold();
+        if (hasFocus && radarFullscreen) applyRadarFullscreenWindow();
     }
 
     private Fragment fragmentForTag(String tag) {
@@ -254,6 +280,37 @@ public class MainActivity extends AppCompatActivity {
         BottomNavigationView nav = findViewById(R.id.bottom_nav);
         if (nav != null) {
             nav.setVisibility(visible ? android.view.View.VISIBLE : android.view.View.GONE);
+        }
+    }
+
+    void setRadarFullscreen(boolean enabled) {
+        if (enabled && activeFragment != radarFragment) return;
+        radarFullscreen = enabled;
+        setBottomNavVisible(!enabled);
+        if (fullscreenBack != null) fullscreenBack.setEnabled(enabled);
+        applyRadarFullscreenWindow();
+        android.view.View root = findViewById(R.id.main);
+        if (root != null) ViewCompat.requestApplyInsets(root);
+    }
+
+    private void applyRadarFullscreenWindow() {
+        WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(
+                getWindow(), getWindow().getDecorView());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams attributes = getWindow().getAttributes();
+            attributes.layoutInDisplayCutoutMode = radarFullscreen
+                    ? (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                        ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                        : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES)
+                    : normalCutoutMode;
+            getWindow().setAttributes(attributes);
+        }
+        if (radarFullscreen) {
+            bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            bars.hide(WindowInsetsCompat.Type.systemBars());
+        } else {
+            bars.setSystemBarsBehavior(normalSystemBarsBehavior);
+            bars.show(WindowInsetsCompat.Type.systemBars());
         }
     }
 

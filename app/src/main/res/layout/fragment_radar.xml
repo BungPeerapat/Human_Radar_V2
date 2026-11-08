@@ -200,6 +200,16 @@
                 android:tooltipText="@string/radar_touch_lock" />
 
             <ImageButton
+                android:id="@+id/btn_exit_fullscreen"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/radar_exit_fullscreen"
+                android:tooltipText="@string/radar_exit_fullscreen"
+                android:visibility="gone" />
+
+            <ImageButton
                 android:id="@+id/btn_snapshot"
                 android:layout_width="36dp"
                 android:layout_height="36dp"

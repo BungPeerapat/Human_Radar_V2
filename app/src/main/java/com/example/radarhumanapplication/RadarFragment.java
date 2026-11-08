@@ -77,6 +77,8 @@ public class RadarFragment extends Fragment
     private static final String PREFS_RADAR = "radar_multi_device";
     private static final String PREFS_KEY_SECONDARY = "secondary_devices";
     private boolean isFullscreen = false;
+    private ImageButton btnExitFullscreen;
+    private static final String STATE_FULLSCREEN = "radar_fullscreen";
     private MqttService mqtt;
     private RadarUiPrefs uiPrefs;
 
@@ -91,6 +93,7 @@ public class RadarFragment extends Fragment
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
+        if (savedInstanceState != null) isFullscreen = savedInstanceState.getBoolean(STATE_FULLSCREEN, false);
         return inflater.inflate(R.layout.fragment_radar, container, false);
     }
 
@@ -115,6 +118,7 @@ public class RadarFragment extends Fragment
         btnLockOrientation = v.findViewById(R.id.btn_lock_orientation);
         btnNightMode = v.findViewById(R.id.btn_night_mode);
         btnSnapshot = v.findViewById(R.id.btn_snapshot);
+        btnExitFullscreen = v.findViewById(R.id.btn_exit_fullscreen);
         // Each of these IDs may legitimately be absent in alternate layouts
         // (currently layout-land matches portrait, but null-guard so any
         // future drift just disables that surface instead of crashing the
@@ -154,11 +158,13 @@ public class RadarFragment extends Fragment
         });
         btnNightMode.setOnClickListener(view -> toggleNightMode());
         btnSnapshot.setOnClickListener(view -> takeSnapshot());
+        btnExitFullscreen.setOnClickListener(view -> exitFullscreen());
 
         // Restore persisted UX prefs
         applyKeepScreenOn(uiPrefs.isKeepScreenOn());
         applyLockOrientation(uiPrefs.isLockOrientation());
         applyNightMode(uiPrefs.isNightMode());
+        applyFullscreen();
 
         deviceStatus = mqtt.getDeviceStatus();
         radarView.setPrimaryDevice(mqtt.getDeviceName() == null ? "" : mqtt.getDeviceName());
@@ -363,16 +369,29 @@ public class RadarFragment extends Fragment
         applyFullscreen();
     }
 
+    void exitFullscreen() {
+        isFullscreen = false;
+        applyFullscreen();
+    }
+
+    @Override
+    public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putBoolean(STATE_FULLSCREEN, isFullscreen);
+    }
+
     private void applyFullscreen() {
         int hidden = isFullscreen ? View.GONE : View.VISIBLE;
         if (statusBar != null) statusBar.setVisibility(hidden);
         if (infoPanel != null) infoPanel.setVisibility(hidden);
+        if (activeDeviceChip != null) activeDeviceChip.setVisibility(hidden);
+        if (btnExitFullscreen != null) btnExitFullscreen.setVisibility(isFullscreen ? View.VISIBLE : View.GONE);
         // tv_radar_stats lives outside infoPanel only in portrait — hide it directly too
         if (tvStats != null && tvStats.getParent() != infoPanel) {
             tvStats.setVisibility(hidden);
         }
-        if (getActivity() instanceof MainActivity) {
-            ((MainActivity) getActivity()).setBottomNavVisible(!isFullscreen);
+        if (getActivity() instanceof MainActivity && !isHidden()) {
+            ((MainActivity) getActivity()).setRadarFullscreen(isFullscreen);
         }
     }
 
@@ -381,9 +400,9 @@ public class RadarFragment extends Fragment
         super.onHiddenChanged(hidden);
         // Restore bottom nav visibility when user navigates away from this fragment
         if (hidden && isFullscreen && getActivity() instanceof MainActivity) {
-            ((MainActivity) getActivity()).setBottomNavVisible(true);
+            ((MainActivity) getActivity()).setRadarFullscreen(false);
         } else if (!hidden && isFullscreen && getActivity() instanceof MainActivity) {
-            ((MainActivity) getActivity()).setBottomNavVisible(false);
+            ((MainActivity) getActivity()).setRadarFullscreen(true);
         }
     }
 
@@ -391,7 +410,7 @@ public class RadarFragment extends Fragment
     public void onDestroyView() {
         // Make sure bottom nav is restored if fragment is destroyed while fullscreen
         if (isFullscreen && getActivity() instanceof MainActivity) {
-            ((MainActivity) getActivity()).setBottomNavVisible(true);
+            ((MainActivity) getActivity()).setRadarFullscreen(false);
         }
         // Drop the keep-screen flag if still set
         if (getActivity() != null) {

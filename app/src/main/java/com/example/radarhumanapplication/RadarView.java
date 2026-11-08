@@ -336,7 +336,9 @@ public class RadarView extends View {
         } else {
             size = width;
         }
-        int finalWidth = size;
+        // MATCH_PARENT promises an exact viewport width. Fit the fan inside it
+        // in onSizeChanged rather than shrinking the view and leaving a blank strip.
+        int finalWidth = MeasureSpec.getMode(widthMeasureSpec) == MeasureSpec.EXACTLY ? width : size;
         int finalHeight = (heightMode == MeasureSpec.EXACTLY) ? height : Math.min(size, height > 0 ? height : size);
         setMeasuredDimension(finalWidth, finalHeight > 0 ? finalHeight : finalWidth);
     }
