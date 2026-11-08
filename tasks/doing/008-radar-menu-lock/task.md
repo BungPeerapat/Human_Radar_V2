@@ -11,7 +11,7 @@
 - [x] ครอบคลุม view ที่สร้างภายหลัง/recreation และคืน enabled state เดิมหลังปลดล็อก
 - [x] กดค้าง 2 วินาทีปลดล็อก; Radar ยังอัปเดตข้อมูล; Full Screen ใช้ได้
 - [x] Review, tests, release, public mirror verification, push/sync และ LINE
-- [ ] ผู้ใช้ตรวจรับบน vivo ว่าเมนู/ปุ่ม Radar ไม่ทำงานขณะข้อความล็อกแสดงอยู่
+- [ ] ผู้ใช้ตรวจรับบน vivo ว่าเมนู/ปุ่ม Radar ไม่ทำงานขณะตัวบอกสถานะล็อกแสดงอยู่
 
 ## ผู้รับผิดชอบ
 

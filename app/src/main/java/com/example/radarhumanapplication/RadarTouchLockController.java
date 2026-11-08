@@ -20,6 +20,7 @@ final class RadarTouchLockController implements AutoCloseable {
     private final Consumer<Boolean> stateChanged;
     private final int touchSlop;
     private final Runnable finishHold;
+    private final Runnable showRemainingSecond;
     private boolean locked;
     private boolean consumingGesture;
     private boolean holding;
@@ -42,6 +43,9 @@ final class RadarTouchLockController implements AutoCloseable {
             if (!locked || !holding) return;
             unlockButton.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             setLocked(false);
+        };
+        showRemainingSecond = () -> {
+            if (locked && holding) unlockButton.setText(R.string.radar_touch_unlock_seconds_one);
         };
         unlockButton.setOnClickListener(view -> {
             if (locked) announceUnlockHint();
@@ -116,8 +120,9 @@ final class RadarTouchLockController implements AutoCloseable {
     void cancelPendingHold() {
         holding = false;
         unlockButton.removeCallbacks(finishHold);
+        unlockButton.removeCallbacks(showRemainingSecond);
         unlockButton.setPressed(false);
-        unlockButton.setText(R.string.radar_touch_unlock_button);
+        unlockButton.setText(R.string.radar_touch_unlock_seconds_two);
     }
 
     /** Called before Activity dispatches to any child, including overlay controls/navigation. */
@@ -132,7 +137,8 @@ final class RadarTouchLockController implements AutoCloseable {
                 holdY = event.getRawY();
                 holding = true;
                 unlockButton.setPressed(true);
-                unlockButton.setText(R.string.radar_touch_unlock_holding);
+                unlockButton.setText(R.string.radar_touch_unlock_seconds_two);
+                unlockButton.postDelayed(showRemainingSecond, UNLOCK_HOLD_MS / 2);
                 unlockButton.postDelayed(finishHold, UNLOCK_HOLD_MS);
                 break;
             case MotionEvent.ACTION_MOVE:

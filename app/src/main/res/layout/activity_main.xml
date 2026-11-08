@@ -32,47 +32,27 @@
         android:id="@+id/radar_touch_lock_overlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="#18000000"
+        android:background="@android:color/transparent"
         android:clickable="true"
         android:focusable="true"
         android:importantForAccessibility="no"
         android:visibility="gone">
 
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom|center_horizontal"
-            android:layout_margin="20dp"
+        <TextView
+            android:id="@+id/btn_unlock_touch"
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_gravity="top|end"
+            android:layout_margin="8dp"
             android:background="@drawable/bg_touch_lock_hint"
             android:gravity="center"
-            android:orientation="vertical"
-            android:padding="12dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/radar_touch_locked"
-                android:textColor="@color/white"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="@string/radar_touch_live_hint"
-                android:textColor="@color/radar_text_dim"
-                android:textSize="12sp" />
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/btn_unlock_touch"
-                android:layout_width="wrap_content"
-                android:layout_height="64dp"
-                android:layout_marginTop="8dp"
-                android:contentDescription="@string/radar_touch_unlock_hint"
-                android:text="@string/radar_touch_unlock_button"
-                app:icon="@drawable/ic_touch_lock" />
-        </LinearLayout>
+            android:focusable="true"
+            android:fontFamily="monospace"
+            android:contentDescription="@string/radar_touch_unlock_hint"
+            android:text="@string/radar_touch_unlock_seconds_two"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:textStyle="bold" />
     </FrameLayout>
 
 </FrameLayout>

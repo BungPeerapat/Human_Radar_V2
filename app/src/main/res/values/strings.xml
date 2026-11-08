@@ -6,10 +6,8 @@
     <string name="nav_config">Config</string>
     <string name="nav_logs">Logs</string>
     <string name="radar_touch_lock">Lock touch controls</string>
-    <string name="radar_touch_locked">Radar touch locked</string>
-    <string name="radar_touch_live_hint">Radar data stays live</string>
     <string name="radar_touch_unlock_hint">Touch locked. Hold anywhere on the screen for two seconds to unlock.</string>
-    <string name="radar_touch_unlock_button">Hold anywhere 2 seconds to unlock</string>
-    <string name="radar_touch_unlock_holding">Keep holding…</string>
+    <string name="radar_touch_unlock_seconds_two">2</string>
+    <string name="radar_touch_unlock_seconds_one">1</string>
     <string name="radar_exit_fullscreen">Exit full screen</string>
 </resources>

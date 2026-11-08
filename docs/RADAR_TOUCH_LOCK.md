@@ -2,11 +2,13 @@
 
 ## วิธีใช้
 
-บนหน้า Radar แตะไอคอนรูปหน้าจอพร้อมแม่กุญแจในแถวปุ่มด้านบน แล้วหน้าจอจะแสดง “Radar touch locked”
+บนหน้า Radar แตะไอคอนรูปหน้าจอพร้อมแม่กุญแจในแถวปุ่มด้านบน ขณะล็อกจะแสดงเลข 2 ขนาดเล็กมุมขวาบน แทนกล่องคำแนะนำที่บัง Radar
 
 ขณะล็อก Radar ยังรับข้อมูลและวาดภาพตามปกติ แต่การแตะ Radar, ปุ่มควบคุม, bottom navigation และ Back จะไม่เปลี่ยนหน้า แตะไอคอน Touch lock เพื่อล็อกทันที ปลดล็อกด้วยการกดค้างนิ่งตรงไหนก็ได้บนพื้นที่แอปต่อเนื่อง 2 วินาที รวมพื้นที่เหนือ overlay หรือเมนู
 
-การแตะสั้น ยกนิ้วก่อนครบเวลา เลื่อนนิ้วเกิน touch slop ใช้หลายนิ้ว หรือออกจาก foreground จะยกเลิกการกดค้าง นิ้วที่ปลดล็อกจะถูก consume จนยกออก ไม่กดเมนูต่อ ผู้ใช้ TalkBack ปลดล็อกผ่าน accessibility long-click ของปุ่มคำแนะนำได้
+การแตะสั้น ยกนิ้วก่อนครบเวลา เลื่อนนิ้วเกิน touch slop ใช้หลายนิ้ว หรือออกจาก foreground จะยกเลิกการกดค้าง นิ้วที่ปลดล็อกจะถูก consume จนยกออก ไม่กดเมนูต่อ ผู้ใช้ TalkBack ปลดล็อกผ่าน accessibility long-click ของตัวเลขมุมจอได้
+
+ขณะกดค้าง เลขมุมขวาบนนับ 2 → 1 แล้วหายเมื่อปลดล็อกครบ 2 วินาที ถ้ายกเลิกก่อนครบเวลาจะกลับเป็น 2 คำแนะนำยังมีใน accessibility description แต่ไม่มี label ยาวบนจอ
 
 ## การคงสถานะ
 
@@ -54,3 +56,9 @@ Push GitHub, sync SSH ผ่าน Tailscale และยืนยันส่�
 ส่งมอบ v1.1.6 / versionCode 109 จาก 241a3ec, CI 42517639575 success; public mirror sync v1.1.6-05fc86985cdd แล้ว ตรวจ app/firmware/bridge hash/size เทียบ GitHub API ผ่าน APK 8,170,603 bytes, SHA-256 594498f9e5148608cb5c7e0404a16351e23acc94a891799689e531c6375983ab ลายเซ็นตรงรุ่นก่อน และยืนยัน enabled-state fence/guarded actions ใน APK จริง
 
 ส่ง LINE ขอให้ตรวจรับบน vivo และยืนยัน server journal แล้ว Firmware บน ESP32 ที่ตอบ health ล่าสุดยัง 1.1.0 (uptime 1634 s) ไม่ได้สั่ง OTA ในงาน Android นี้
+
+## เลขมุมจอ v1.1.7
+
+ตามคำขอผู้ใช้ เอากล่องคำแนะนำและ tint คลุม Radar ออก ใช้ badge เลข 12sp ขนาด 32dp มุมขวาบน กดค้างนับ 2 → 1 แล้วปลดล็อกเมื่อครบ 2 วินาที ยกเลิกแล้วกลับ 2 คำแนะนำแบบ spoken accessibility และ long-click ยังคงอยู่
+
+69 JVM tests และ UI regressions 11 tests ผ่าน 43.822 s หลังแก้ System UI ANR ของ emulator ตรวจภาพจริงทั้งแนวตั้ง, หมุนแนวนอน, Full Screen และเลข 1 ระหว่างกดค้างด้วย adb motionevent แล้ว Code review APPROVE ไม่มี finding ค้าง

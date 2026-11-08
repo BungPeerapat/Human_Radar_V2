@@ -8,6 +8,7 @@ tasks/
   doing/
     006-beep-reconnect-timing/task.md
     008-radar-menu-lock/task.md
+    009-compact-lock-countdown/task.md
   done/
     007-update-server-fallback/task.md
     005-touch-lock-input-guard/task.md
