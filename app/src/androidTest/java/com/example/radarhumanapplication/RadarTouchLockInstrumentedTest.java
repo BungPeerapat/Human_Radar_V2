@@ -47,6 +47,79 @@ public class RadarTouchLockInstrumentedTest {
     }
 
     @Test
+    public void physicalTouchLockTapDisablesNavigationAndRadarActions() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync();
+            int[][] positions = new int[3][];
+            int[] orientation = new int[1];
+            scenario.onActivity(activity -> {
+                assertTrue(activity.findViewById(R.id.btn_lock_touch).getWidth() > 0);
+                positions[0] = center(activity.findViewById(R.id.btn_lock_touch));
+                positions[1] = center(activity.findViewById(R.id.nav_dashboard));
+                positions[2] = center(activity.findViewById(R.id.radar_view));
+                orientation[0] = activity.getRequestedOrientation();
+            });
+            tap(positions[0]);
+            scenario.onActivity(activity -> {
+                assertEquals(View.VISIBLE, activity.findViewById(R.id.radar_touch_lock_overlay).getVisibility());
+                for (int control : new int[]{R.id.btn_manual_rotate, R.id.btn_lock_orientation,
+                        R.id.btn_keep_screen_on, R.id.btn_night_mode, R.id.btn_snapshot,
+                        R.id.btn_multi_device, R.id.radar_view, R.id.nav_dashboard}) {
+                    assertFalse("Locked controls must really be disabled: " + control,
+                            activity.findViewById(control).isEnabled());
+                }
+                // Commands must also be guarded if a click is invoked outside touch dispatch.
+                activity.findViewById(R.id.btn_manual_rotate).performClick();
+                activity.findViewById(R.id.btn_snapshot).performClick();
+                ((BottomNavigationView) activity.findViewById(R.id.bottom_nav)).setSelectedItemId(R.id.nav_dashboard);
+                assertEquals(orientation[0], activity.getRequestedOrientation());
+                assertEquals(R.id.nav_radar, ((BottomNavigationView) activity.findViewById(R.id.bottom_nav)).getSelectedItemId());
+            });
+            tap(positions[1]);
+            long time = SystemClock.uptimeMillis();
+            pointer(MotionEvent.ACTION_DOWN, positions[2], time);
+            SystemClock.sleep(2200);
+            pointer(MotionEvent.ACTION_UP, positions[2], time);
+            scenario.onActivity(activity -> {
+                assertEquals(View.GONE, activity.findViewById(R.id.radar_touch_lock_overlay).getVisibility());
+                assertTrue(activity.findViewById(R.id.btn_manual_rotate).isEnabled());
+                assertTrue(activity.findViewById(R.id.nav_dashboard).isEnabled());
+            });
+            tap(positions[1]);
+            scenario.onActivity(activity -> assertEquals(R.id.nav_dashboard,
+                    ((BottomNavigationView) activity.findViewById(R.id.bottom_nav)).getSelectedItemId()));
+        }
+    }
+
+    @Test
+    public void controlFenceRestoresOriginalStatesAndDisablesLateChildren() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                android.widget.FrameLayout content = new android.widget.FrameLayout(activity);
+                android.widget.Button initiallyDisabled = new android.widget.Button(activity);
+                initiallyDisabled.setEnabled(false);
+                android.widget.Button initiallyEnabled = new android.widget.Button(activity);
+                content.addView(initiallyDisabled);
+                content.addView(initiallyEnabled);
+                RadarTouchLockController controller = new RadarTouchLockController(content,
+                        new android.widget.FrameLayout(activity), new TextView(activity), locked -> {});
+                try {
+                    controller.setLocked(true);
+                    assertFalse(initiallyEnabled.isEnabled());
+                    android.widget.Button late = new android.widget.Button(activity);
+                    content.addView(late);
+                    content.getViewTreeObserver().dispatchOnGlobalLayout();
+                    assertFalse(late.isEnabled());
+                    controller.setLocked(false);
+                    assertFalse(initiallyDisabled.isEnabled());
+                    assertTrue(initiallyEnabled.isEnabled());
+                    assertTrue(late.isEnabled());
+                } finally { controller.close(); }
+            });
+        }
+    }
+
+    @Test
     public void lockedRadarBlocksControlsAndShortTapsThenUnlocksAfterDeliberateHold() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             int[][] positions = new int[3][];
