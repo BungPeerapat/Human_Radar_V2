@@ -108,7 +108,7 @@ Hash ยืนยันว่าไฟล์ตรงกับ metadata ที�
 - [x] เผยแพร่ signed v1.1.0 ด้วยคีย์เดิมและ manifest versionCode 91; ผู้ใช้ยืนยันอัปเดตแล้วต่อ MQTT ได้
 - [x] บอร์ดใช้ project WSS 9002 ที่รองรับ; Android ใช้ TLS 8883 บน broker เดียวกัน ตรวจ health/config/OTA แล้ว โดยคง WiFi/NVS เดิม
 - [x] ปิด HTTPS container ทดสอบและลบ UFW rules 9443 เฉพาะงานนี้แล้ว; recovery binaries ยังคงอยู่และใช้ public GitHub OTA ได้
-- [x] สรุป OTA และย้ายงาน 002 ไป done ตามขอบเขตที่ผู้ใช้ยืนยัน; งาน 001 เหลือ App patch เติม Password
+- [x] สรุปผลและย้ายงาน 001–002 ไป done ตามขอบเขตที่ผู้ใช้ยืนยัน; App v1.1.1 เติม Password และ checkout บนเซิร์ฟเวอร์อัปเดตแล้ว
 
 ## หลักฐานการตรวจรับ
 

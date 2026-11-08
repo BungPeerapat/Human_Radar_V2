@@ -6,8 +6,8 @@
 tasks/
   todo/
   doing/
-    001-primary-mqtt/task.md
   done/
+    001-primary-mqtt/task.md
     002-ota-server-migration/task.md
 ```
 

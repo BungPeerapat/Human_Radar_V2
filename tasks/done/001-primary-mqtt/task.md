@@ -39,7 +39,7 @@
 - [x] แอป Android ที่รันจริงบน emulator API 36 และ ESP32 จริงส่ง/รับคำสั่ง/ACK และข้อมูล discovery/targets ได้; ผู้ใช้ยืนยัน signed v1.1.0 ต่อ MQTT ได้แล้ว
 - [x] ผู้ใช้ไม่ระบุบัญชีหรือใช้รหัสผิดถูกปฏิเสธ และสิทธิ์ topic ถูกต้อง
 - [x] OTA และการกู้คืนผ่านงาน `002`; ผู้ใช้รับขอบเขตซอฟต์แวร์และให้หยุดตรวจชุดจ่ายไฟ
-- [ ] ส่งมอบ App patch ให้ปุ่ม project broker เติม Password กลางอัตโนมัติ ตามผู้ใช้เลือกและรับทราบว่า APK สาธารณะดึงรหัสได้
+- [x] เผยแพร่ App v1.1.1 ให้ปุ่ม project broker เติม Password กลางอัตโนมัติ ตามผู้ใช้เลือกและรับทราบว่า APK สาธารณะดึงรหัสได้
 - [x] ไม่มี secret ใหม่ใน repository และมีคำแนะนำเลือก TLS สำหรับพอร์ต `8883`
 
 ## สิ่งที่ต้องพึ่งพา
@@ -65,3 +65,6 @@ Broker ใหม่ติดตั้งแล้ว แต่ยังต้อ
 - Controlled restart ผ่าน 123.7 วินาที/695 targets แต่ controlled OTA หลังติดตั้งสำเร็จยังพบ brownout เพิ่ม 4 ครั้งโดยไม่พบ MQTT Restart แทรก; ผู้ใช้ยืนยันใช้ชุดจ่ายไฟในตัวอุปกรณ์ รอแยกทดสอบ USB charger ทางเดียวก่อนปิด gate
 
 - ผู้ใช้ให้หยุดตรวจไฟเลี้ยงและแจ้งว่าจ่าย 5V ให้ทั้ง ESP32/Sensor ผ่านโมดูล; งานที่เหลือคือแก้ปุ่ม Password แล้ว push/release App ให้ Check Update ได้
+
+- ปิดงาน: App v1.1.1 versionCode 94 เผยแพร่แล้ว ปุ่มเติม Host/Port/Username/Password ผ่าน Android UI regression 6.925 วินาที; JVM 62 tests ผ่าน, CI 42445566256 success และตรวจ production APK/manifest/signature แล้ว
+- Source push ขึ้น GitHub และ sync เซิร์ฟเวอร์แล้ว; ประเด็นชุดจ่ายไฟเก็บเป็นข้อสังเกตตามผู้ใช้สั่งไม่ตรวจต่อ ไม่มีการล้าง brownout counters

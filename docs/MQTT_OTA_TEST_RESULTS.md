@@ -87,10 +87,10 @@
 9. Log การ save config มี credentials — เปลี่ยนเป็นข้อความที่ไม่แสดง body
 10. Offline LWT อาจถูกใช้ยืนยัน firmware — ต้องเป็นสถานะ online และรุ่นตรงตามเงื่อนไข
 
-## ขอบเขตตรวจรับตามผู้ใช้และงานที่เหลือ
+## ผลปิดงานตามขอบเขตผู้ใช้
 
 - ผู้ใช้แจ้งว่าระบบใช้งานปกติ ให้หยุดตรวจชุดจ่ายไฟ และยืนยันจ่าย 5V ให้ ESP32/Sensor ผ่านโมดูล จึงปิดงาน OTA ตามขอบเขตซอฟต์แวร์ โดยคงผล brownout ไว้เป็นข้อสังเกต ไม่ได้อ้างว่าแก้ hardware แล้ว
-- ผู้ใช้ได้รับ signed v1.1.0 ผ่าน Check Update และยืนยันเชื่อมต่อได้แล้ว; พบ UI bug ที่ปุ่ม project broker ล้าง Password จึงกำลังแก้และส่งมอบ App patch
+- ผู้ใช้ได้รับ signed v1.1.0 ผ่าน Check Update และยืนยันเชื่อมต่อได้แล้ว; พบ UI bug ที่ปุ่ม project broker ล้าง Password แก้และเผยแพร่ App patch v1.1.1 แล้ว
 - ชุดส่งต่อรับ implementation และเอกสารถึง `acd67dc` บน branch `dev` แล้ว และตรวจ working tree บนเซิร์ฟเวอร์ว่าง; หลัง hardware gates ผ่านต้องอัปเดตผลสุดท้ายอีกครั้งก่อนปิดงาน
 
 ไม่ได้ทดสอบการตัด WiFi router จริงหรือสร้าง firmware ที่ boot crash โดยจงใจ จึงไม่อ้างว่าครอบคลุมความขัดข้องทางไฟฟ้า/bootloader ทุกแบบ การทดสอบข้างต้นไม่ใช่การประกาศ release ใหม่บน GitHub หรือ rollout ไปทุกอุปกรณ์
@@ -129,3 +129,12 @@ adb shell am instrument -w \
 - ตรวจปุ่มจริง/confirmation dialog แล้ว Host, Port, Username และ Password ตรงกับ private fixture ของ broker โดยไม่พิมพ์รหัสใน assertion
 - JVM 62 tests ผ่าน และ debug/test APK build ผ่าน; CI secret `PROJECT_MQTT_PASSWORD` ตั้งค่าแล้วและ workflow ปฏิเสธ release หากไม่มีค่า
 - ผู้ใช้ยืนยันเลือกใส่รหัสกลางใน APK สำหรับทุกเครื่อง หลังรับทราบการดึงรหัสจาก APK สาธารณะ; source ใช้ environment/BuildConfig เท่านั้น ไม่มีรหัสจริงใน Git
+
+## ผลส่งมอบสุดท้าย v1.1.1
+
+- Source commit `8d907da03f5f7458b9c847e8038d14e1dbe1b075` push ขึ้น GitHub แล้ว; CI `42445566256` completed/success และเผยแพร่ v1.1.1 เป็น release ปกติ
+- Public latest manifest update/firmware/bridge ทั้งหมดเป็น versionCode 94; ดาวน์โหลดทั้ง 3 binary มาตรวจขนาด/SHA-256 ตรงกับ manifest และ firmware/bridge ไม่เกิน OTA slot
+- APK v1.1.1: 8,159,979 bytes, SHA-256 `f8ad883b95e5e80db0cb2e87d18fc449eea97c107e541432bcb5af18eba7b957`; signing certificate ตรงกับ v1.0.61/v1.1.0
+- ตรวจ APK production ว่ามีรหัสกลางตรงกับ broker โดยไม่พิมพ์ค่ารหัสในผลทดสอบ; Android UI regression ผ่านครบ Host/Port/Username/Password
+- บอร์ดทดสอบที่ OTA จริงล่าสุดอยู่ v1.1.0; v1.1.1 firmware/bridge ใช้ source เดิมและเปลี่ยน version stamp ผ่าน CI build/native tests และตรวจ public binary/manifest แล้ว ไม่ได้แฟลชเพิ่มเพื่อแก้บั๊กที่อยู่เฉพาะแอป
+- งาน 001/002 ปิดตามขอบเขตซอฟต์แวร์ที่ผู้ใช้ยืนยัน ย้ายไป tasks/done เก็บ raw brownout observations ไว้โดยไม่อ้างว่าแก้ชุดจ่ายไฟแล้ว
