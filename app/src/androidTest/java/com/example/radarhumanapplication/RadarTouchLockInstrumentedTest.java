@@ -62,8 +62,12 @@ public class RadarTouchLockInstrumentedTest {
                 assertEquals(View.VISIBLE, overlay.getVisibility());
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            scenario.onActivity(activity -> positions[2] = center(
-                    activity.findViewById(id(activity, "btn_unlock_touch"))));
+            // Unlock from the radar canvas, not just the old dedicated button.
+            scenario.onActivity(activity -> {
+                View radar = activity.findViewById(R.id.radar_view);
+                positions[2] = center(radar);
+                positions[2][1] -= radar.getHeight() / 4;
+            });
             tap(positions[0]);
             tap(positions[1]);
             tap(positions[2]);
@@ -98,6 +102,34 @@ public class RadarTouchLockInstrumentedTest {
             scenario.onActivity(activity -> assertEquals(View.GONE,
                     activity.findViewById(id(activity, "radar_touch_lock_overlay")).getVisibility()));
             tap(positions[1]);
+            scenario.onActivity(activity -> assertEquals(R.id.nav_dashboard,
+                    ((BottomNavigationView) activity.findViewById(R.id.bottom_nav)).getSelectedItemId()));
+        }
+    }
+
+    @Test
+    public void holdingOverMenuUnlocksWithoutClickingThroughOnRelease() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            int[][] menu = new int[1][];
+            scenario.onActivity(activity -> {
+                menu[0] = center(activity.findViewById(R.id.nav_dashboard));
+                activity.findViewById(R.id.btn_lock_touch).performClick();
+                // Even if a child overlay is accidentally hidden/reordered, Activity must guard input.
+                activity.findViewById(R.id.radar_touch_lock_overlay).setVisibility(View.GONE);
+            });
+            tap(menu[0]);
+            scenario.onActivity(activity -> assertEquals(R.id.nav_radar,
+                    ((BottomNavigationView) activity.findViewById(R.id.bottom_nav)).getSelectedItemId()));
+            long time = SystemClock.uptimeMillis();
+            pointer(MotionEvent.ACTION_DOWN, menu[0], time);
+            SystemClock.sleep(2200);
+            pointer(MotionEvent.ACTION_UP, menu[0], time);
+            scenario.onActivity(activity -> {
+                assertEquals(View.GONE, activity.findViewById(R.id.radar_touch_lock_overlay).getVisibility());
+                assertEquals("The release that unlocks must never activate the menu", R.id.nav_radar,
+                        ((BottomNavigationView) activity.findViewById(R.id.bottom_nav)).getSelectedItemId());
+            });
+            tap(menu[0]);
             scenario.onActivity(activity -> assertEquals(R.id.nav_dashboard,
                     ((BottomNavigationView) activity.findViewById(R.id.bottom_nav)).getSelectedItemId()));
         }
