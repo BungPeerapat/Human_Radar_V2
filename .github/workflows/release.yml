@@ -222,6 +222,26 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare verified Gradle distribution
+        run: |
+          GRADLE_ZIP="$RUNNER_TEMP/gradle-8.9-bin.zip"
+          if ! curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+            --connect-timeout 10 --max-time 30 \
+            https://downloads.gradle.org/distributions/gradle-8.9-bin.zip -o "$GRADLE_ZIP"; then
+            # The public download redirect can fail while the asset API still works.
+            ASSET_URL=$(curl --fail --silent --show-error --connect-timeout 10 --max-time 30 \
+              https://api.github.com/repos/gradle/gradle-distributions/releases/tags/v8.9.0 \
+              | jq -er '.assets[] | select(.name == "gradle-8.9-bin.zip") | .url')
+            [[ "$ASSET_URL" =~ ^https://api.github.com/repos/gradle/gradle-distributions/releases/assets/[0-9]+$ ]]
+            curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+              --header 'Accept: application/octet-stream' --connect-timeout 10 --max-time 180 \
+              "$ASSET_URL" -o "$GRADLE_ZIP"
+          fi
+          # Official binary checksum: https://gradle.org/release-checksums/#8.9
+          echo "d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab  $GRADLE_ZIP" | sha256sum --check
+          unzip -q "$GRADLE_ZIP" -d "$RUNNER_TEMP"
+          echo "GRADLE_EXECUTABLE=$RUNNER_TEMP/gradle-8.9/bin/gradle" >> "$GITHUB_ENV"
+
       - name: Assemble release APK
         env:
           APP_VERSION_NAME: ${{ steps.version.outputs.version_name }}
@@ -236,7 +256,7 @@ jobs:
             echo "::error::PROJECT_MQTT_PASSWORD secret is required for project broker autofill"
             exit 1
           fi
-          ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+          "$GRADLE_EXECUTABLE" :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: Verify update mirror publication policy
         run: |

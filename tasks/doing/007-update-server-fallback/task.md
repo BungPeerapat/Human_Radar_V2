@@ -22,4 +22,7 @@ Bootstrap https://systemdeveloper.ddns.net/human-radar/updates/human-radar-v1.1.
 - หลังเพิ่ม binary-only fallback ทดสอบ Android เฉพาะ 2 tests ผ่าน 25.758 s; logcat ยืนยัน primary APK ล้มเหลวแล้ว mirror download/hash สำเร็จ
 - Mirror fault tests ผ่าน: valid publish, corrupted download ไม่ทับชุดเดิม, next release, reject downgrade
 - แก้ review finding ให้ latest.apk อยู่ใน snapshot และ root ชี้ current/latest.apk คงที่ก่อนส่งมอบ
-- รอ release v1.1.5, ติดตั้ง timer และตรวจ artifacts/LINE
+- Code review ผ่าน ไม่มี finding ค้าง; binary fallback test ใช้ release ที่ไม่มีอยู่เพื่อบังคับเส้นทางสำรอง แม้ GitHub กลับมาปกติแล้ว (ผ่าน 13.259 s)
+- Sync source 9d7e66c ไป SSH แล้ว ติดตั้ง/enable timer 5 นาทีและ service รันสำเร็จโดยใช้ v1.1.4
+- CI 42466437764 หยุดก่อน compile เพราะ Gradle distribution redirect timeout; เพิ่ม API fallback ที่ตรวจ official Gradle 8.9 checksum แล้ว (136,114,148 bytes, SHA ตรง)
+- รอ release v1.1.5 รอบใหม่และตรวจ artifacts/LINE
