@@ -147,6 +147,11 @@ public class RadarFragment extends Fragment
         btnKeepScreenOn.setOnClickListener(view -> toggleKeepScreenOn());
         btnManualRotate.setOnClickListener(view -> manualRotate());
         btnLockOrientation.setOnClickListener(view -> toggleLockOrientation());
+        v.findViewById(R.id.btn_lock_touch).setOnClickListener(view -> {
+            if (getActivity() instanceof MainActivity) {
+                ((MainActivity) getActivity()).lockRadarTouches();
+            }
+        });
         btnNightMode.setOnClickListener(view -> toggleNightMode());
         btnSnapshot.setOnClickListener(view -> takeSnapshot());
 

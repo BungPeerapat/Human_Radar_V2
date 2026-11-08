@@ -194,6 +194,15 @@
                     android:contentDescription="Night mode" />
 
                 <ImageButton
+                    android:id="@+id/btn_lock_touch"
+                    android:layout_width="36dp"
+                    android:layout_height="36dp"
+                    android:src="@drawable/ic_touch_lock"
+                    android:background="?android:attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="@string/radar_touch_lock"
+                    android:tooltipText="@string/radar_touch_lock" />
+
+                <ImageButton
                     android:id="@+id/btn_snapshot"
                     android:layout_width="36dp"
                     android:layout_height="36dp"

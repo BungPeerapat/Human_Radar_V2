@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Bundle;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
@@ -19,6 +20,9 @@ import androidx.fragment.app.Fragment;
 import com.example.radarhumanapplication.alerts.AlertManager;
 import com.example.radarhumanapplication.update.UpdateDialog;
 import com.example.radarhumanapplication.update.UpdateManager;
+import com.example.radarhumanapplication.update.UpdateInfo;
+import com.google.gson.Gson;
+import com.google.gson.JsonParseException;
 
 import com.google.android.material.bottomnavigation.BottomNavigationView;
 
@@ -30,6 +34,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG_CONFIG = "config";
     private static final String TAG_LOGS = "logs";
     private static final String STATE_ACTIVE_TAG = "active_tag";
+    private static final String STATE_RADAR_TOUCH_LOCKED = "radar_touch_locked";
+    private static final String STATE_PENDING_UPDATE = "pending_update";
 
     private RadarFragment radarFragment;
     private DashboardFragment dashboardFragment;
@@ -37,6 +43,8 @@ public class MainActivity extends AppCompatActivity {
     private ConfigFragment configFragment;
     private LogsFragment logsFragment;
     private Fragment activeFragment;
+    private RadarTouchLockController touchLock;
+    private UpdateInfo pendingUpdate;
 
     private final ActivityResultLauncher<String> notifPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {});
@@ -44,6 +52,17 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        if (savedInstanceState != null) {
+            String savedUpdate = savedInstanceState.getString(STATE_PENDING_UPDATE);
+            if (savedUpdate != null) {
+                try {
+                    UpdateInfo info = new Gson().fromJson(savedUpdate, UpdateInfo.class);
+                    if (info != null && info.isUsable()) pendingUpdate = info;
+                } catch (JsonParseException error) {
+                    android.util.Log.w("MainActivity", "Could not restore deferred app update", error);
+                }
+            }
+        }
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
 
@@ -101,7 +120,24 @@ public class MainActivity extends AppCompatActivity {
         }
 
         BottomNavigationView bottomNav = findViewById(R.id.bottom_nav);
+        OnBackPressedCallback touchLockBack = new OnBackPressedCallback(false) {
+            @Override
+            public void handleOnBackPressed() {
+                touchLock.announceUnlockHint();
+            }
+        };
+        getOnBackPressedDispatcher().addCallback(this, touchLockBack);
+        touchLock = new RadarTouchLockController(findViewById(R.id.main_content),
+                findViewById(R.id.radar_touch_lock_overlay), findViewById(R.id.btn_unlock_touch),
+                locked -> {
+                    touchLockBack.setEnabled(locked);
+                    if (!locked) showPendingUpdateIfUnlocked();
+                });
+        if (savedInstanceState != null && activeFragment == radarFragment) {
+            touchLock.setLocked(savedInstanceState.getBoolean(STATE_RADAR_TOUCH_LOCKED, false));
+        }
         bottomNav.setOnItemSelectedListener(item -> {
+            if (touchLock.isLocked()) return false;
             Fragment target;
             int id = item.getItemId();
             if (id == R.id.nav_radar) {
@@ -137,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
         UpdateManager.getInstance().checkAuto(this, result -> {
             if (isFinishing() || isDestroyed()) return;
             if (result.status == UpdateManager.Status.UPDATE_AVAILABLE && result.info != null) {
-                UpdateDialog.show(getSupportFragmentManager(), result.info);
+                offerUpdate(result.info);
             }
         });
     }
@@ -146,6 +182,48 @@ public class MainActivity extends AppCompatActivity {
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putString(STATE_ACTIVE_TAG, tagForFragment(activeFragment));
+        outState.putBoolean(STATE_RADAR_TOUCH_LOCKED, touchLock != null && touchLock.isLocked());
+        if (pendingUpdate != null) outState.putString(STATE_PENDING_UPDATE, new Gson().toJson(pendingUpdate));
+    }
+
+    void offerUpdate(UpdateInfo info) {
+        if (info == null || !info.isUsable()) return;
+        pendingUpdate = info;
+        showPendingUpdateIfUnlocked();
+    }
+
+    public void lockRadarTouches() {
+        if (touchLock != null && activeFragment == radarFragment) touchLock.setLocked(true);
+    }
+
+    private void showPendingUpdateIfUnlocked() {
+        if (pendingUpdate == null || isFinishing() || isDestroyed()
+                || (touchLock != null && touchLock.isLocked())
+                || getSupportFragmentManager().isStateSaved()
+                || !getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+            return;
+        }
+        UpdateInfo info = pendingUpdate;
+        pendingUpdate = null;
+        UpdateDialog.show(getSupportFragmentManager(), info);
+    }
+
+    @Override
+    protected void onPostResume() {
+        super.onPostResume();
+        showPendingUpdateIfUnlocked();
+    }
+
+    @Override
+    protected void onPause() {
+        if (touchLock != null) touchLock.cancelPendingHold();
+        super.onPause();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus && touchLock != null) touchLock.cancelPendingHold();
     }
 
     private Fragment fragmentForTag(String tag) {
@@ -181,6 +259,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        if (touchLock != null) touchLock.close();
         super.onDestroy();
         // Intentionally do NOT disconnect MQTT here — the foreground service keeps the
         // connection alive after the activity is destroyed (background, screen off, app switch).

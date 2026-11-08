@@ -5,7 +5,9 @@
 ```text
 tasks/
   todo/
+    004-radar-fullscreen/task.md
   doing/
+    003-radar-touch-lock/task.md
   done/
     001-primary-mqtt/task.md
     002-ota-server-migration/task.md

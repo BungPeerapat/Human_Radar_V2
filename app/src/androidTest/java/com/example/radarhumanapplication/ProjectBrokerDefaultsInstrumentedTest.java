@@ -16,6 +16,7 @@ import org.junit.runner.RunWith;
 import static androidx.test.espresso.Espresso.onView;
 import static androidx.test.espresso.action.ViewActions.click;
 import static androidx.test.espresso.matcher.ViewMatchers.withId;
+import static androidx.test.espresso.matcher.RootMatchers.isDialog;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assume.assumeTrue;
@@ -44,7 +45,7 @@ public class ProjectBrokerDefaultsInstrumentedTest {
                 assertEquals(View.VISIBLE, button.getVisibility());
                 button.performClick();
             });
-            onView(withId(android.R.id.button1)).perform(click());
+            onView(withId(android.R.id.button1)).inRoot(isDialog()).perform(click());
             scenario.onActivity(activity -> {
                 assertEquals(BrokerEndpoint.DEFAULT_HOST,
                         ((EditText) activity.findViewById(R.id.et_broker_host)).getText().toString());

@@ -5,4 +5,10 @@
     <string name="nav_alerts">Alerts</string>
     <string name="nav_config">Config</string>
     <string name="nav_logs">Logs</string>
+    <string name="radar_touch_lock">Lock touch controls</string>
+    <string name="radar_touch_locked">Radar touch locked</string>
+    <string name="radar_touch_live_hint">Radar data stays live</string>
+    <string name="radar_touch_unlock_hint">Touch locked. Hold the unlock button for two seconds.</string>
+    <string name="radar_touch_unlock_button">Hold 2 seconds to unlock</string>
+    <string name="radar_touch_unlock_holding">Keep holding…</string>
 </resources>

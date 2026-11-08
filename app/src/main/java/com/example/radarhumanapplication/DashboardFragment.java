@@ -298,6 +298,7 @@ public class DashboardFragment extends Fragment
      */
     private long lastSwitchSuggestionMs = 0;
     private void maybeSuggestSwitch() {
+        if (!isAdded() || !isVisible()) return;
         if (!mqtt.isConnected()) return;
         long now = System.currentTimeMillis();
         if (now - lastSwitchSuggestionMs < 30_000) return;   // throttle
