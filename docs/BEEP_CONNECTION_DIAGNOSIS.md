@@ -16,6 +16,8 @@
 - Broker log พบ HumanRadarBung negotiate TLS หลายครั้งในช่วงตรวจล่าสุด แสดงว่ามีการต่อ transport ใหม่ แต่บอกเหตุที่หลุดไม่ได้จากบรรทัดเหล่านั้น
 - Retained info ระบุ firmware 1.1.0 และ retained status online แต่การขอ health ในหน้าต่าง 15 วินาทีไม่ได้ ACK และไม่มี targets สด จึงไม่ถือ retained online เป็นหลักฐานว่าบอร์ดยังออนไลน์
 - ยังไม่มี health/log สดเพียงพอระบุ WiFi RSSI, reset reason, heap หรือค่าจังหวะ beep ที่ใช้จริง ไม่สรุปว่าปัญหามาจากระบบจ่ายไฟ
+- ผู้ใช้ยืนยันว่าแอปต่อ broker ได้ แต่บอร์ดไม่ออนไลน์ทั้งที่เปิดอยู่
+- เปิด connection logging ชั่วคราวและขอ health 3 รอบในช่วง 45 วินาที ไม่พบ connection ใหม่จากบอร์ด/ACK/targets สด คืนค่า logging เดิมแล้วด้วย SIGHUP และยืนยัน PID broker ไม่เปลี่ยน ตาม [Mosquitto configuration reload](https://mosquitto.org/man/mosquitto-conf-5.html)
 
 ## ขั้นต่อไป
 

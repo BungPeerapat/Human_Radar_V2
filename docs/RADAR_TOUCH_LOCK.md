@@ -34,4 +34,6 @@ Full Screen ส่งมอบแล้วใน v1.1.3 ตาม task 004
 
 RED ยืนยันว่ารุ่นเดิมกดค้างบน canvas ไม่ปลดล็อก GREEN ผ่าน 62 JVM tests และ UI 9 tests ทั้งแนวนอน 30.930 วินาที/แนวตั้ง 29.598 วินาที ครอบคลุม canvas/menu hold, ไม่กดทะลุตอนยกนิ้ว, เลื่อน/หลายจุด, keyboard guard, background, recreation, fullscreen และ password autofill
 
-เตรียมเผยแพร่ v1.1.4 ผ่าน Check Update หลังตรวจ public artifacts
+เผยแพร่ v1.1.4 / versionCode 101 จาก 6bf1ebb ผ่าน Check Update แล้ว CI 42462864452 success ตรวจ public app/firmware/bridge manifests และ binary hash/size ผ่าน APK 8,169,315 bytes, SHA-256 87d1051998a66de5cb5f803223e4c2eb9231b4a1a79acd50099793af456a2d83 ลายเซ็นตรงรุ่นก่อนและตรวจ input guard/รหัสโปรเจกต์ใน APK แล้ว
+
+Push GitHub, sync SSH ผ่าน Tailscale และยืนยันส่ง LINE จาก server journal สำเร็จ การตรวจอาการ beep/บอร์ด offline แยกบันทึกใน docs/BEEP_CONNECTION_DIAGNOSIS.md และ task 006 ยังไม่มีการเปลี่ยน firmware หรือระบบจ่ายไฟ

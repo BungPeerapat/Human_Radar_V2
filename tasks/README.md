@@ -5,10 +5,10 @@
 ```text
 tasks/
   todo/
-    006-beep-reconnect-timing/task.md
   doing/
-    005-touch-lock-input-guard/task.md
+    006-beep-reconnect-timing/task.md
   done/
+    005-touch-lock-input-guard/task.md
     004-radar-fullscreen/task.md
     003-radar-touch-lock/task.md
     001-primary-mqtt/task.md
