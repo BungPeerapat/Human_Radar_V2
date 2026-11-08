@@ -2,6 +2,7 @@
 #include "mqtt_client.h"
 #include "alert_pattern.h"
 #include "logger.h"
+#include "config_json.h"
 
 #include <Update.h>      // ESP32 OTA helper (built-in to esp32 Arduino core)
 #include <esp_ota_ops.h> // esp_ota_mark_app_invalid_rollback_and_reboot()
@@ -251,13 +252,14 @@ void WebRadarServer::setupHTTP() {
     _http.on("/api/firmware-update", HTTP_POST,
         [this]() {
             // This first lambda runs AFTER the upload completes (or fails).
-            if (!_otaBeginOk || Update.hasError()) {
+            if (!_otaBeginOk || !_otaComplete || Update.hasError()) {
                 const char* emsg = _otaBeginOk ? Update.errorString() : "begin failed";
                 String err = String("{\"ok\":false,\"error\":\"") + emsg + "\"}";
                 Log::error(TAG_SYSTEM, "OTA failed: %s", emsg);
                 _http.send(500, "application/json", err);
                 // Cancel the heartbeat — the device isn't actually about
                 // to reboot into new firmware.
+                alertPattern.onFirmwareUpdateFinish();
                 alertPattern.update();
             } else {
                 _http.send(200, "application/json",
@@ -293,7 +295,8 @@ void WebRadarServer::setupHTTP() {
                     // accept whatever fits the partition. Erasing it can take a
                     // few seconds — feed the watchdog first.
                     esp_task_wdt_reset();
-                    _otaBeginOk = Update.begin(UPDATE_SIZE_UNKNOWN);
+                    _otaComplete = false;
+                    _otaBeginOk = !Update.isRunning() && Update.begin(UPDATE_SIZE_UNKNOWN);
                     if (!_otaBeginOk) {
                         Log::error(TAG_SYSTEM, "Update.begin failed: %s",
                                    Update.errorString());
@@ -308,13 +311,16 @@ void WebRadarServer::setupHTTP() {
                         upload.currentSize) {
                         Log::error(TAG_SYSTEM, "Update.write failed: %s",
                                    Update.errorString());
+                        Update.abort();
+                        _otaBeginOk = false;
                     }
                     // Drive the indicator from inside the upload loop because
                     // main loop() is paused while the chunked POST drains.
                     alertPattern.update();
                     break;
                 case UPLOAD_FILE_END:
-                    if (_otaBeginOk && Update.end(true)) {
+                    _otaComplete = _otaBeginOk && Update.end(true);
+                    if (_otaComplete) {
                         Log::info(TAG_SYSTEM, "OTA end: %u bytes accepted",
                                   upload.totalSize);
                     } else {
@@ -324,7 +330,9 @@ void WebRadarServer::setupHTTP() {
                     alertPattern.update();
                     break;
                 case UPLOAD_FILE_ABORTED:
-                    Update.end();
+                    Update.abort();
+                    _otaBeginOk = false;
+                    _otaComplete = false;
                     Log::warn(TAG_SYSTEM, "OTA aborted by client");
                     alertPattern.update();
                     break;
@@ -462,35 +470,16 @@ void WebRadarServer::handleSaveConfig() {
     }
 
     String body = _http.arg("plain");
-    Log::info("Save config: %s", body.c_str());
+    Log::info("Saving configuration (credentials redacted)");
 
-    // Simple JSON parsing (no library needed for flat structure)
-    // Extract values using indexOf/substring
-    auto getJsonStr = [&](const char* key) -> String {
-        String search = String("\"") + key + "\":\"";
-        int start = body.indexOf(search);
-        if (start < 0) return "";
-        start += search.length();
-        int end = body.indexOf("\"", start);
-        if (end < 0) return "";
-        return body.substring(start, end);
-    };
-
-    auto getJsonInt = [&](const char* key, int def) -> int {
-        String search = String("\"") + key + "\":";
-        int start = body.indexOf(search);
-        if (start < 0) return def;
-        start += search.length();
-        return body.substring(start).toInt();
-    };
-
-    // hasKey() — tells the partial-update logic below whether a key was actually
-    // present in the body. Without this guard a POST that only carries WiFi keys
-    // would wipe MQTT credentials (and vice versa) because the missing keys are
-    // indistinguishable from explicit zero/empty values otherwise.
-    auto hasKey = [&](const char* key) -> bool {
-        return body.indexOf(String("\"") + key + "\":") >= 0;
-    };
+    ConfigJson config(body.c_str());
+    if (!config.valid() || !config.fieldTypesValid()) {
+        _http.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid configuration JSON or field types\"}");
+        return;
+    }
+    auto getJsonStr = [&](const char* key) -> String { return String(config.string(key)); };
+    auto getJsonInt = [&](const char* key, int fallback) -> int { return config.number(key, fallback); };
+    auto hasKey = [&](const char* key) -> bool { return config.has(key); };
 
     // Save WiFi — only if at least one wifi key is present.
     if (hasKey("wm") || hasKey("ws") || hasKey("wp")) {

@@ -1,5 +1,7 @@
 #include "bridge_mqtt.h"
 #include "bridge_ota.h"
+#include "server_policy.h"
+#include "mqtt_trust.h"
 
 #include <WiFi.h>
 #include <WiFiClient.h>
@@ -19,7 +21,7 @@ WiFiClientSecure  g_tlsClient;
 PubSubClient      g_mqtt;
 
 char g_devName[33] = "HumanRadar";
-char g_fwVersion[16] = "0.0.0";
+char g_fwVersion[64] = "0.0.0";
 char g_topicStatus[96];
 char g_topicInfo[96];
 char g_topicCmd[96];
@@ -77,7 +79,7 @@ void handleCmd(char* topic, byte* payload, unsigned int length) {
             "\"phase\":\"starting\"}", requestId);
         g_mqtt.publish(g_topicCmdAck, ack);
         delay(50);
-        bridgeOtaPull(g_mqtt, g_topicCmdAck, requestId, url);
+        bridgeOtaPull(g_mqtt, g_topicCmdAck, requestId, url, doc["sha256"] | "", doc["sizeBytes"] | 0u);
     } else if (strcmp(cmd, "restart") == 0) {
         char ack[128];
         snprintf(ack, sizeof(ack),
@@ -113,13 +115,14 @@ bool tryConnect() {
     Preferences p;
     p.begin("hradar", true);
     char host[65] = {0};
+    strncpy(host, RadarServer::HOST, sizeof(host) - 1);
     char user[33] = {0};
     char pass[65] = {0};
-    p.getString("mqtt_host", host, sizeof(host));
-    uint16_t port = p.getUShort("mqtt_port", 1883);
+    if (p.isKey("mqtt_host")) p.getString("mqtt_host", host, sizeof(host));
+    uint16_t port = p.getUShort("mqtt_port", RadarServer::PORT);
     p.getString("mqtt_user", user, sizeof(user));
     p.getString("mqtt_pass", pass, sizeof(pass));
-    uint8_t proto = p.getUChar("mqtt_proto", 2);  // 0=ws, 1=wss, 2=tcp, 3=tls
+    uint8_t proto = p.getUChar("mqtt_proto", RadarServer::PROTO);  // 0=ws, 1=wss, 2=tcp, 3=tls
     p.end();
 
     if (strlen(host) == 0) {
@@ -127,18 +130,26 @@ bool tryConnect() {
         return false;
     }
 
-    // The bridge only supports plain TCP and TLS. WebSocket transports
-    // (proto 0/1) would need the WebSockets library we deliberately
-    // stripped — fall back to TCP / TLS using the same host:port.
-    g_useTls = (proto == 1 || proto == 3);
+    int transport = RadarServer::bridgeProtocol(host, proto, port);
+    if (transport < 0) {
+        Serial.println("[bridge-mqtt] Custom WebSocket broker cannot map to TCP; configure TCP/TLS first");
+        return false;
+    }
+    g_useTls = transport == 3;
     if (g_useTls) {
-        g_tlsClient.setInsecure();
+        if (RadarServer::isPrimary(host)) {
+            if (!mqttClockReady()) return false;
+            g_tlsClient.setCACert(MQTT_ROOT_CA);
+        } else {
+            g_tlsClient.setInsecure(); // preserve custom-broker configuration
+        }
         g_mqtt.setClient(g_tlsClient);
     } else {
         g_mqtt.setClient(g_plainClient);
     }
     g_mqtt.setServer(host, port);
     g_mqtt.setBufferSize(MQTT_BUFFER_SIZE);
+    g_mqtt.setKeepAlive(240);
     g_mqtt.setCallback(handleCmd);
 
     Serial.printf("[bridge-mqtt] Connecting %s:%d (%s) as '%s'\n",

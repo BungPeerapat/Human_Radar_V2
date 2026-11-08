@@ -13,16 +13,24 @@ int main() {
     assert(!OtaPolicy::validRequest("https://example.com/fw.bin", sha, 1310721, 1310720));
     assert(!OtaPolicy::validRequest("https://user:pw@example.com/fw.bin", sha, 10, 100));
     assert(!OtaPolicy::validRequest("https:///fw.bin", sha, 10, 100));
+    assert(!OtaPolicy::validRequest(nullptr, sha, 10, 100));
+    assert(!OtaPolicy::validRequest("https://example.com/fw.bin", nullptr, 10, 100));
+    assert(!OtaPolicy::validSha256("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"));
+    assert(OtaPolicy::validSha256("ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"));
     assert(!OtaPolicy::complete(999, 1000));
     assert(!OtaPolicy::complete(0, 0));
     assert(OtaPolicy::complete(1000, 1000));
     assert(!OtaPolicy::complete(1001, 1000));
     assert(OtaPolicy::timedOut(60001, 0));
     assert(!OtaPolicy::timedOut(59999, 0));
+    assert(OtaPolicy::timedOut(60000, 0));
     assert(OtaPolicy::timedOut(60000, 0xfffffff0u)); // millis wrap-around
     assert(std::strcmp(RadarServer::HOST, "systemdeveloper.ddns.net") == 0);
     assert(RadarServer::PORT == 8883);
     assert(RadarServer::PROTO == 3);
+    assert(RadarServer::isPrimary("SYSTEMDEVELOPER.DDNS.NET."));
+    assert(!RadarServer::isPrimary(nullptr));
+    assert(!RadarServer::isPrimary("systemdeveloper.ddns.net.attacker.example"));
     unsigned short port = 9002;
     assert(RadarServer::bridgeProtocol(RadarServer::HOST, 1, port) == 3 && port == 8883);
     port = 1883;

@@ -45,6 +45,7 @@ private:
     // True once Update.begin() succeeded for the in-progress /api/firmware-update
     // upload; gates write/end/response so a failed begin can't report false success.
     bool             _otaBeginOk = false;
+    bool             _otaComplete = false;
 
     void setupWiFi();
     void startRescueAp();

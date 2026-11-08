@@ -133,7 +133,7 @@ private:
     void cmdGetLogBuffer(const char* requestId, int limit);
     void cmdSetLogLevel(const char* requestId, const char* level);
     void cmdHealth(const char* requestId);
-    void cmdOtaPull(const char* requestId, const char* url);
+    void cmdOtaPull(const char* requestId, const char* url, const char* sha256, size_t sizeBytes);
 };
 
 extern MqttRadarClient mqttClient;

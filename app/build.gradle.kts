@@ -81,6 +81,7 @@ dependencies {
     implementation(libs.activity)
     implementation(libs.constraintlayout)
     implementation(libs.hivemq.mqtt)
+    implementation(platform(libs.hivemq.websocket))
     implementation(libs.gson)
     implementation(libs.okhttp)
     testImplementation(libs.junit)

@@ -1,3 +1,4 @@
+#include <esp_ota_ops.h>
 // Bridge firmware — minimal OTA pull. See platformio.ini for what's
 // stripped vs the full Human_Radar_V2 firmware.
 //
@@ -84,6 +85,16 @@ void setup() {
     digitalWrite(LED_PIN, LOW);
     Serial.begin(115200);
     delay(500);
+
+    // A rescue image must leave PENDING_VERIFY before it can accept another
+    // OTA image. Confirm basic startup before waiting indefinitely for WiFi.
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    esp_ota_img_states_t state;
+    if (running && esp_ota_get_state_partition(running, &state) == ESP_OK
+            && state == ESP_OTA_IMG_PENDING_VERIFY) {
+        const esp_err_t result = esp_ota_mark_app_valid_cancel_rollback();
+        Serial.printf("[bridge] OTA confirmation: %d\n", static_cast<int>(result));
+    }
 
     Serial.println();
     Serial.println("========================================");

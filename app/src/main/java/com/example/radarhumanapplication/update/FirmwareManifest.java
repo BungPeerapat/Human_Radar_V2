@@ -14,7 +14,16 @@ public class FirmwareManifest {
     public String publishedAt  = "";
 
     public boolean isUsable() {
-        return versionName != null && !versionName.isEmpty()
-                && binUrl  != null && !binUrl.isEmpty();
+        if (versionName == null || versionName.trim().isEmpty()
+                || sha256 == null || !sha256.matches("(?i)[0-9a-f]{64}")
+                || sizeBytes <= 0 || sizeBytes > 16L * 1024 * 1024) return false;
+        try {
+            java.net.URI uri = new java.net.URI(binUrl);
+            return "https".equalsIgnoreCase(uri.getScheme())
+                    && uri.getHost() != null && !uri.getHost().isEmpty()
+                    && uri.getRawUserInfo() == null;
+        } catch (Exception invalidUrl) {
+            return false;
+        }
     }
 }

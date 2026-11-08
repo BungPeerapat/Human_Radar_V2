@@ -1,5 +1,6 @@
 #include "config_manager.h"
 #include "logger.h"
+#include "server_policy.h"
 
 ConfigManager configManager;
 
@@ -44,9 +45,10 @@ void ConfigManager::applyDefaults() {
     // Enable switch on the /settings page without having to re-type host/port
     // every time. Picked to match the project's reference broker.
     _cfg.mqttEnabled = 0;
-    _cfg.mqttProto = 2;        // mqtt/tcp (plain TCP — broker accepts on 8883)
-    strlcpy(_cfg.mqttHost, "119.59.99.155", sizeof(_cfg.mqttHost));
-    _cfg.mqttPort = 8883;
+    _cfg.mqttProto = RadarServer::PROTO; // MQTT/TLS with CA verification
+    strlcpy(_cfg.mqttHost, RadarServer::HOST, sizeof(_cfg.mqttHost));
+    strlcpy(_cfg.mqttUser, RadarServer::USERNAME, sizeof(_cfg.mqttUser));
+    _cfg.mqttPort = RadarServer::PORT;
     _cfg.publishIntervalMs = 100;
     _cfg.unmannedDelayMs = 5000;
     _cfg.targetTimeoutMs = 1000;
@@ -78,7 +80,7 @@ void ConfigManager::loadFromNVS() {
     _cfg.autoReconnect = _prefs.getUChar("auto_rc", 1);   // default ON for new+upgraded devices
 
     // MQTT — applyDefaults() ran first, so _cfg.mqttHost/_cfg.mqttPort already
-    // hold the pre-fill ("119.59.99.155" : 8883). Only override from NVS when
+    // hold the project TLS defaults. Only override from NVS when
     // the key is actually stored, so a fresh device keeps the new defaults.
     _cfg.mqttEnabled = _prefs.getUChar("mqtt_en", _cfg.mqttEnabled);
     _cfg.mqttProto = _prefs.getUChar("mqtt_proto", _cfg.mqttProto);
@@ -86,7 +88,9 @@ void ConfigManager::loadFromNVS() {
         _prefs.getString("mqtt_host", _cfg.mqttHost, sizeof(_cfg.mqttHost));
     }
     _cfg.mqttPort = _prefs.getUShort("mqtt_port", _cfg.mqttPort);
-    _prefs.getString("mqtt_user", _cfg.mqttUser, sizeof(_cfg.mqttUser));
+    if (_prefs.isKey("mqtt_user")) {
+        _prefs.getString("mqtt_user", _cfg.mqttUser, sizeof(_cfg.mqttUser));
+    }
     _prefs.getString("mqtt_pass", _cfg.mqttPass, sizeof(_cfg.mqttPass));
 
     // Device
@@ -155,6 +159,13 @@ void ConfigManager::setAutoReconnect(uint8_t enabled) {
 // MQTT
 // ============================================================================
 void ConfigManager::setMQTT(uint8_t enabled, uint8_t proto, const char* host, uint16_t port, const char* user, const char* pass) {
+    // A project endpoint has known secure listeners. Explicit settings changes
+    // can normalize those listeners; loading NVS never silently migrates devices.
+    if (RadarServer::isPrimary(host)) {
+        host = RadarServer::HOST;
+        proto = proto == 1 ? 1 : RadarServer::PROTO;
+        port = proto == 1 ? 9002 : RadarServer::PORT;
+    }
     _cfg.mqttEnabled = enabled;
     _cfg.mqttProto = proto;
     strlcpy(_cfg.mqttHost, host, sizeof(_cfg.mqttHost));

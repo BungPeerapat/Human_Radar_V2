@@ -43,7 +43,9 @@ public class MqttService {
     private static final String TAG = "MqttService";
     private static final MqttService instance = new MqttService();
 
-    private Mqtt3AsyncClient client;
+    private volatile Mqtt3AsyncClient client;
+    private final java.util.concurrent.atomic.AtomicLong connectionGeneration =
+            new java.util.concurrent.atomic.AtomicLong();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Gson gson = new Gson();
     private final List<LogEntry> logBuffer = new CopyOnWriteArrayList<>();
@@ -439,12 +441,20 @@ public class MqttService {
     }
 
     public void connect() {
-        if (brokerHost.isEmpty()) {
-            Log.w(TAG, "No broker configured");
+        if (!BrokerEndpoint.isValid(brokerHost, brokerPort)) {
+            mainHandler.post(() -> {
+                for (ConnectionListener listener : connectionListeners) {
+                    listener.onDisconnected("Invalid broker. Project MQTT requires "
+                            + BrokerEndpoint.DEFAULT_HOST + ":8883 (TLS) or :9002 (WSS)");
+                }
+            });
             return;
         }
 
         disconnect();
+        final long generation = connectionGeneration.get();
+        final String connectionUsername = username;
+        final byte[] connectionPassword = password.getBytes(StandardCharsets.UTF_8);
 
         // Start foreground service so MQTT stays alive when app goes to background / screen off.
         if (appContext != null) {
@@ -456,63 +466,90 @@ public class MqttService {
         }
 
         try {
+            java.util.concurrent.atomic.AtomicBoolean subscriptionsRegistered =
+                    new java.util.concurrent.atomic.AtomicBoolean();
+            java.util.concurrent.atomic.AtomicReference<Mqtt3AsyncClient> connection =
+                    new java.util.concurrent.atomic.AtomicReference<>();
             var builder = MqttClient.builder()
                     .useMqttVersion3()
                     .identifier("HumanRadarApp-" + UUID.randomUUID().toString().substring(0, 8))
                     .serverHost(brokerHost)
                     .serverPort(brokerPort)
                     .automaticReconnectWithDefaultConfig()
+                    .addConnectedListener(ctx -> mainHandler.post(() -> {
+                        if (generation != connectionGeneration.get()) {
+                            if (connection.get() != null) connection.get().disconnect();
+                            return;
+                        }
+                        connected = true;
+                        // Register callback flows only once per client. HiveMQ restores
+                        // these subscriptions after automatic reconnect; registering
+                        // again would multiply incoming-message callbacks.
+                        if (subscriptionsRegistered.compareAndSet(false, true)) subscribeAll(connection.get());
+                        Log.i(TAG, "Network connected; generation=" + generation);
+                        injectAppLog("INFO", "MQTT", "Connected to " + brokerHost + ":" + brokerPort);
+                        for (ConnectionListener listener : connectionListeners) listener.onConnected();
+                        mainHandler.postDelayed(this::maybeAutoPickActive, 3000);
+                    }))
                     .addDisconnectedListener(ctx -> {
-                        connected = false;
+                        if (generation != connectionGeneration.get()) {
+                            ctx.getReconnector().reconnect(false);
+                            return;
+                        }
+                        ctx.getReconnector().resubscribeIfSessionExpired(true);
+                        // The primary broker requires authentication on every CONNECT,
+                        // including retries. Rebuild it from this connection's snapshot
+                        // so a consumed/absent password buffer cannot become anonymous.
+                        var retry = ((com.hivemq.client.mqtt.mqtt3.lifecycle.Mqtt3ClientReconnector)
+                                ctx.getReconnector()).connectWith().cleanSession(true).keepAlive(30);
+                        if (!connectionUsername.isEmpty()) {
+                            retry.simpleAuth().username(connectionUsername)
+                                    .password(connectionPassword.clone()).applySimpleAuth();
+                        }
+                        retry.applyConnect();
+                        Log.i(TAG, "Network disconnected; generation=" + generation
+                                + "; reconnect=" + ctx.getReconnector().isReconnect());
                         String reason = ctx.getCause() != null
                                 ? ctx.getCause().getMessage() : "unknown";
-                        injectAppLog("WARN", "MQTT", "Disconnected: " + reason);
                         mainHandler.post(() -> {
+                            if (generation != connectionGeneration.get()) return;
+                            connected = false;
+                            injectAppLog("WARN", "MQTT", "Disconnected: " + reason);
                             for (ConnectionListener l : connectionListeners) {
                                 l.onDisconnected(reason);
                             }
                         });
                     });
 
+            if (BrokerEndpoint.usesTls(brokerHost, brokerPort)) builder.sslWithDefaultConfig();
+            if (BrokerEndpoint.usesWebSocket(brokerPort)) {
+                builder.webSocketConfig().serverPath("/mqtt").applyWebSocketConfig();
+            }
             client = builder.buildAsync();
+            connection.set(client);
 
             var connectBuilder = client.connectWith()
                     .cleanSession(true)
                     .keepAlive(30);
 
-            if (!username.isEmpty()) {
+            if (!connectionUsername.isEmpty()) {
                 connectBuilder.simpleAuth()
-                        .username(username)
-                        .password(password.getBytes(StandardCharsets.UTF_8))
+                        .username(connectionUsername)
+                        .password(connectionPassword.clone())
                         .applySimpleAuth();
             }
 
             connectBuilder.send()
                     .whenComplete((connAck, throwable) -> {
+                        if (generation != connectionGeneration.get()) return;
                         if (throwable != null) {
                             Log.e(TAG, "Connect failed", throwable);
                             mainHandler.post(() -> {
+                                if (generation != connectionGeneration.get() || connected) return;
                                 for (ConnectionListener l : connectionListeners) {
                                     l.onDisconnected(throwable.getMessage());
                                 }
                             });
-                        } else {
-                            connected = true;
-                            Log.i(TAG, "Connected to " + brokerHost);
-                            injectAppLog("INFO", "MQTT",
-                                    "Connected to " + brokerHost + ":" + brokerPort
-                                            + " as '" + deviceName + "'");
-                            subscribeAll();
-                            mainHandler.post(() -> {
-                                for (ConnectionListener l : connectionListeners) {
-                                    l.onConnected();
-                                }
-                            });
-                            // Smart auto-pick: 3 s after we connect, if the configured
-                            // device is still silent (no /status retained) but EXACTLY
-                            // ONE other device is online, switch to it. Multiple online
-                            // devices → leave the choice to the user.
-                            mainHandler.postDelayed(this::maybeAutoPickActive, 3000);
                         }
                     });
         } catch (Exception e) {
@@ -521,6 +558,7 @@ public class MqttService {
     }
 
     public void disconnect() {
+        connectionGeneration.incrementAndGet();
         if (client != null) {
             try {
                 client.disconnect();
@@ -542,37 +580,37 @@ public class MqttService {
         return "humanradar/" + deviceName + "/" + suffix;
     }
 
-    private void subscribeAll() {
-        if (client == null) return;
+    private void subscribeAll(Mqtt3AsyncClient source) {
+        if (source == null) return;
 
-        subscribe(topic("targets"), this::handleTargets);
-        subscribe(topic("status"), this::handleStatus);
-        subscribe(topic("config/ack"), this::handleConfigAck);
-        subscribe(topic("cmd/ack"), this::handleCmdAck);
+        subscribe(source, topic("targets"), this::handleTargets);
+        subscribe(source, topic("status"), this::handleStatus);
+        subscribe(source, topic("config/ack"), this::handleConfigAck);
+        subscribe(source, topic("cmd/ack"), this::handleCmdAck);
         // Logs subscribe to the wildcard so the Logs tab can filter by device
         // without forcing a reconnect each time the user switches view.
         // handleLog extracts the device name from the topic and tags the
         // resulting LogEntry so listeners can route correctly.
-        subscribe("humanradar/+/log", this::handleLog);
+        subscribe(source, "humanradar/+/log", this::handleLog);
 
         // Re-attach any extra-device target subscriptions the Radar tab added
         // before this connection finished (or that survived a reconnect).
         for (String dn : extraTargetSubs) {
             if (dn != null && !dn.isEmpty() && !dn.equals(deviceName)) {
-                subscribe("humanradar/" + dn + "/targets", this::handleTargets);
+                subscribe(source, "humanradar/" + dn + "/targets", this::handleTargets);
             }
         }
 
         // Wildcard discovery — picks up every ESP32 that publishes humanradar/<name>/status
         // on the same broker. Used by the device picker to show what's actually online.
-        subscribe("humanradar/+/status", this::handleDiscoveryStatus);
+        subscribe(source, "humanradar/+/status", this::handleDiscoveryStatus);
         // Retained "info" message carries the device's HTTP IP + firmware version so the
         // picker can show it without the user having to type 192.168.x.x by hand.
-        subscribe("humanradar/+/info", this::handleDiscoveryInfo);
+        subscribe(source, "humanradar/+/info", this::handleDiscoveryInfo);
         // Wildcard cmd/ack so the HealthCheckManager (and any future bulk
         // command) can observe responses from any device, not just the
         // currently-active one.
-        subscribe("humanradar/+/cmd/ack", this::handleAnyCmdAck);
+        subscribe(source, "humanradar/+/cmd/ack", this::handleAnyCmdAck);
     }
 
     private void handleDiscoveryInfo(Mqtt3Publish publish) {
@@ -643,9 +681,15 @@ public class MqttService {
     }
 
     private void subscribe(String topicFilter, java.util.function.Consumer<Mqtt3Publish> handler) {
-        client.subscribeWith()
+        subscribe(client, topicFilter, handler);
+    }
+
+    private void subscribe(Mqtt3AsyncClient source, String topicFilter,
+                           java.util.function.Consumer<Mqtt3Publish> handler) {
+        if (source == null) return;
+        source.subscribeWith()
                 .topicFilter(topicFilter)
-                .callback(handler::accept)
+                .callback(message -> { if (source == client) handler.accept(message); })
                 .send()
                 .whenComplete((ack, err) -> {
                     if (err != null) Log.e(TAG, "Sub failed: " + topicFilter, err);
@@ -850,6 +894,27 @@ public class MqttService {
             for (String key : extras.keySet()) payload.add(key, extras.get(key));
         }
         publish("humanradar/" + deviceName + "/cmd", payload.toString());
+    }
+
+    /** Publish a caller-correlated control message and report broker handoff errors. */
+    public void sendTrackedCommand(String target, String cmd, String requestId, JsonObject extras,
+                                   java.util.function.Consumer<Throwable> completion) {
+        Mqtt3AsyncClient current = client;
+        if (!connected || current == null) {
+            completion.accept(new IllegalStateException("MQTT is disconnected"));
+            return;
+        }
+        JsonObject payload = extras.deepCopy();
+        payload.addProperty("request_id", requestId);
+        payload.addProperty("cmd", cmd);
+        try {
+            current.publishWith().topic("humanradar/" + target + "/cmd")
+                    .qos(com.hivemq.client.mqtt.datatypes.MqttQos.AT_LEAST_ONCE)
+                    .payload(payload.toString().getBytes(StandardCharsets.UTF_8))
+                    .send().whenComplete((result, error) -> completion.accept(error));
+        } catch (RuntimeException publishFailure) {
+            completion.accept(publishFailure);
+        }
     }
 
     public void sendCommand(String cmd, JsonObject extras) {

@@ -96,7 +96,14 @@
                     android:textStyle="bold"
                     android:layout_marginBottom="10dp" />
 
-                <com.google.android.material.textfield.TextInputLayout
+                <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_project_broker"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Use project MQTT (TLS)"
+                style="@style/Widget.Material3.Button.OutlinedButton" />
+
+            <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:hint="Broker Host / IP"

@@ -260,12 +260,14 @@ public final class FirmwareUpdater {
      * MQTT + internet — no LAN reachability from the phone needed.
      *
      * <p>The {@link InstallCallback#onUploaded()} callback fires when the
-     * command is published; the caller should then call
+     * matching device confirms a committed image; the caller should then call
      * {@link #verifyOnMqtt} to wait for the device to come back with
      * the new fw version.
      */
     public void installViaMqtt(FirmwareManifest manifest, String deviceName,
                                InstallCallback cb) {
+        if (pendingMqttCancel != null) pendingMqttCancel.run();
+        cancelled = false;
         if (manifest == null || !manifest.isUsable()) {
             main.post(() -> cb.onError("Manifest is empty"));
             return;
@@ -282,11 +284,49 @@ public final class FirmwareUpdater {
         }
         com.google.gson.JsonObject extras = new com.google.gson.JsonObject();
         extras.addProperty("url", manifest.binUrl);
-        mqtt.sendCommandToWithExtras(deviceName, "ota_pull", extras);
+        extras.addProperty("sha256", manifest.sha256);
+        extras.addProperty("sizeBytes", manifest.sizeBytes);
+        String requestId = java.util.UUID.randomUUID().toString();
+        MqttOtaSession session = new MqttOtaSession(deviceName, requestId);
+        java.util.concurrent.atomic.AtomicBoolean settled = new java.util.concurrent.atomic.AtomicBoolean();
+        com.example.radarhumanapplication.MqttService.AnyCmdAckListener[] listener =
+                new com.example.radarhumanapplication.MqttService.AnyCmdAckListener[1];
+        Runnable[] timeout = new Runnable[1];
+        Runnable cleanup = () -> {
+            mqtt.removeAnyCmdAckListener(listener[0]);
+            if (timeout[0] != null) main.removeCallbacks(timeout[0]);
+        };
+        listener[0] = (sender, ack) -> {
+            if (settled.get()) return;
+            MqttOtaSession.Event event = session.update(sender, ack);
+            if (event == MqttOtaSession.Event.PROGRESS) {
+                main.post(() -> cb.onProgress(session.getProgress(), "ESP32 downloading and verifying"));
+            } else if (event == MqttOtaSession.Event.ERROR || event == MqttOtaSession.Event.COMMITTED) {
+                if (!settled.compareAndSet(false, true)) return;
+                cleanup.run();
+                if (event == MqttOtaSession.Event.ERROR) main.post(() -> cb.onError(session.getMessage()));
+                else main.post(cb::onUploaded); // only a committed image starts reboot verification
+            }
+        };
+        timeout[0] = () -> {
+            if (!settled.compareAndSet(false, true)) return;
+            cleanup.run();
+            cb.onError("No correlated OTA completion ACK; inspect device status before retrying");
+        };
+        pendingMqttCancel = () -> {
+            if (settled.compareAndSet(false, true)) cleanup.run();
+        };
+        mqtt.addAnyCmdAckListener(listener[0]);
+        main.postDelayed(timeout[0], 240_000);
+        mqtt.sendTrackedCommand(deviceName, "ota_pull", requestId, extras, error -> {
+            if (error != null && settled.compareAndSet(false, true)) {
+                cleanup.run();
+                main.post(() -> cb.onError("OTA command publish failed: " + error.getMessage()));
+            }
+        });
         mqtt.injectAppLog("INFO", "OTA",
                 "Sent ota_pull to " + deviceName + " → " + manifest.binUrl);
         main.post(() -> cb.onProgress(50, "Waiting for ESP32 to download + flash"));
-        main.post(cb::onUploaded);
     }
 
     private final Context appContext;
@@ -295,6 +335,7 @@ public final class FirmwareUpdater {
     private final Gson gson = new Gson();
     private final FirmwareUploader uploader;
     private volatile boolean cancelled = false;
+    private Runnable pendingMqttCancel;
 
     public FirmwareUpdater(Context ctx) {
         this.appContext = ctx.getApplicationContext();
@@ -303,6 +344,7 @@ public final class FirmwareUpdater {
 
     public void cancel() {
         cancelled = true;
+        if (pendingMqttCancel != null) pendingMqttCancel.run();
         uploader.cancel();
     }
 
@@ -419,6 +461,11 @@ public final class FirmwareUpdater {
             in = null;
             main.post(() -> cb.onProgress(100, "Download complete"));
 
+            if (binFile.length() != manifest.sizeBytes) {
+                safeDelete(binFile);
+                postErr(cb, "Firmware size mismatch — download rejected");
+                return;
+            }
             if (manifest.sha256 != null && !manifest.sha256.isEmpty()) {
                 String actual = sha256(binFile);
                 if (!actual.equalsIgnoreCase(manifest.sha256)) {
@@ -512,6 +559,7 @@ public final class FirmwareUpdater {
                 : mqtt.getDiscoveredDevices()) {
             if (d == null) continue;
             if (expectedDeviceName.equals(d.deviceName)
+                    && d.isOnline()
                     && expectedVersion != null
                     && expectedVersion.equals(d.fw)
                     && d.lastSeenMs >= startedAt - 1000) {
@@ -533,9 +581,7 @@ public final class FirmwareUpdater {
                 com.example.radarhumanapplication.MqttService.DiscoveredDevice d =
                         findDevice(mqtt, deviceName);
                 if (d == null || d.fw == null || d.fw.isEmpty()) return;
-                boolean match = expectedVersion == null
-                        || expectedVersion.isEmpty()
-                        || expectedVersion.equals(d.fw);
+                boolean match = MqttOtaSession.isOnlineVersion(expectedVersion, d.fw, status);
                 if (!match) return;
                 settled[0] = true;
             }

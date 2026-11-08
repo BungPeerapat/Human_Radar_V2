@@ -8,4 +8,5 @@
 // client. Calls ESP.restart() on success — does not return in that
 // path.
 void bridgeOtaPull(PubSubClient& mqtt, const char* ackTopic,
-                   const char* requestId, const char* url);
+                   const char* requestId, const char* url,
+                   const char* sha256, size_t sizeBytes);

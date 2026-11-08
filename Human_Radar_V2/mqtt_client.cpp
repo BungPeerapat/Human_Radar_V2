@@ -2,6 +2,9 @@
 #include "logger.h"
 #include "power_monitor.h"
 #include "alert_pattern.h"
+#include "server_policy.h"
+#include "mqtt_trust.h"
+#include "ota_download.h"
 
 #include <HTTPClient.h>
 #include <Update.h>
@@ -61,8 +64,14 @@ int WSMqttClient::connect(const char* host, uint16_t port) {
     _ws.onEvent(onEvent);
     _ws.setReconnectInterval(0);
     _ws.enableHeartbeat(15000, 3000, 2);
-    if (_useTLS) _ws.beginSSL(host, port, _path, "", "mqtt");
-    else         _ws.begin(host, port, _path, "mqtt");
+    if (_useTLS && RadarServer::isPrimary(host)) {
+        if (!mqttClockReady()) return 0;
+        _ws.beginSslWithCA(host, port, _path, MQTT_ROOT_CA, "mqtt");
+    } else if (_useTLS) {
+        _ws.beginSSL(host, port, _path, "", "mqtt"); // existing custom-broker policy
+    } else {
+        _ws.begin(host, port, _path, "mqtt");
+    }
     uint32_t start = millis();
     while (!_connected && (millis() - start) < MQTT_WS_CONNECT_TIMEOUT) {
         _ws.loop();
@@ -135,7 +144,8 @@ void MqttRadarClient::setupTransport() {
         _mqtt.setClient(_tcpClient);
         break;
     case MQTT_PROTO_TLS:
-        _tlsClient.setInsecure();
+        if (RadarServer::isPrimary(cfg.mqttHost)) _tlsClient.setCACert(MQTT_ROOT_CA);
+        else _tlsClient.setInsecure(); // preserve existing custom-broker behavior
         _mqtt.setClient(_tlsClient);
         break;
     }
@@ -189,6 +199,7 @@ void MqttRadarClient::begin() {
     const DeviceConfig& cfg = configManager.get();
     setupTransport();
     _mqtt.setServer(cfg.mqttHost, cfg.mqttPort);
+    _mqtt.setKeepAlive(240); // bounded OTA transfer runs inside the MQTT callback
     _mqtt.setBufferSize(MQTT_BUFFER_SIZE);
     _mqtt.setCallback(mqttCallback);
 
@@ -212,6 +223,8 @@ void MqttRadarClient::begin() {
 // Connect + Subscribe
 // ============================================================================
 bool MqttRadarClient::tryConnect() {
+    const DeviceConfig& clockCfg = configManager.get();
+    if (RadarServer::isPrimary(clockCfg.mqttHost) && !mqttClockReady()) return false;
     const DeviceConfig& cfg = configManager.get();
     const char* clientId = cfg.deviceName;
 
@@ -467,7 +480,7 @@ void MqttRadarClient::handleCommand(const uint8_t* payload, unsigned int length)
                 "\"message\":\"ota_pull missing url\"}", requestId);
             _mqtt.publish(_topicCmdAck, ack);
         } else {
-            cmdOtaPull(requestId, url);
+            cmdOtaPull(requestId, url, doc["sha256"] | "", doc["sizeBytes"] | 0u);
         }
     } else {
         Log::warn(TAG_MQTT, "Unknown command: %s", cmd);
@@ -571,141 +584,29 @@ void MqttRadarClient::cmdHealth(const char* requestId) {
 // and streams them into Update.write(). The huge advantage over the
 // HTTP-push path is that the app doesn't need to reach the ESP on the
 // LAN — works from anywhere with MQTT + internet.
-void MqttRadarClient::cmdOtaPull(const char* requestId, const char* url) {
-    Log::info(TAG_MQTT, "CMD: ota_pull <- %s", url);
-
-    auto ackFail = [&](const char* msg, int code) {
-        char ack[384];
-        snprintf(ack, sizeof(ack),
-            "{\"request_id\":\"%s\",\"status\":\"error\",\"cmd\":\"ota_pull\","
-            "\"message\":\"%s\",\"http\":%d}", requestId, msg, code);
-        _mqtt.publish(_topicCmdAck, ack);
+void MqttRadarClient::cmdOtaPull(const char* requestId, const char* url,
+                                    const char* sha256, size_t sizeBytes) {
+    auto ack = [&](const char* status, const char* message, size_t bytes) {
+        JsonDocument doc;
+        doc["request_id"] = requestId;
+        doc["cmd"] = "ota_pull";
+        doc["status"] = status;
+        doc["message"] = message;
+        doc["bytes"] = bytes;
+        if (strcmp(status, "progress") == 0) doc["pct"] = sizeBytes ? bytes * 100u / sizeBytes : 0;
+        if (strcmp(status, "ok") == 0) doc["restarting"] = true;
+        char payload[512];
+        serializeJson(doc, payload, sizeof(payload));
+        _mqtt.publish(_topicCmdAck, payload);
     };
-
-    // Visual heartbeat on GPIO26 while we download + flash, same as the
-    // HTTP-push path. Operator can tell at a glance the chip is busy.
     alertPattern.onFirmwareUpdateStart();
-    alertPattern.update();
-
-    // GitHub Releases redirects HTTPS to a signed S3 URL. Use the
-    // WiFiClientSecure with setInsecure() — pinning a cert here is not
-    // practical given the redirect target rotates. The .bin's SHA-256
-    // is validated by Update.h when an MD5 / size is supplied, and the
-    // app can verify the running fw after reboot via /info MQTT topic.
-    WiFiClientSecure tlsClient;
-    tlsClient.setInsecure();
-    WiFiClient plainClient;
-
-    HTTPClient http;
-    http.setUserAgent("HumanRadar/" FW_VERSION);
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-    http.setReuse(false);
-    http.setTimeout(30000);
-
-    bool isHttps = (strncmp(url, "https://", 8) == 0);
-    bool ok = isHttps ? http.begin(tlsClient, url)
-                      : http.begin(plainClient, url);
-    if (!ok) {
-        alertPattern.onFirmwareUpdateFinish();
-        ackFail("http.begin failed", 0);
-        return;
-    }
-
-    int code = http.GET();
-    if (code != HTTP_CODE_OK) {
-        Log::error(TAG_MQTT, "ota_pull HTTP %d", code);
-        http.end();
-        alertPattern.onFirmwareUpdateFinish();
-        ackFail("HTTP GET failed", code);
-        return;
-    }
-
-    int total = http.getSize();
-    if (total <= 0) {
-        Log::warn(TAG_MQTT, "ota_pull: content-length unknown, using UPDATE_SIZE_UNKNOWN");
-    }
-    Log::info(TAG_MQTT, "ota_pull downloading %d bytes", total);
-
-    // Erasing the 1.25 MB OTA partition can take a few seconds under flash/WiFi
-    // contention — feed the watchdog right before it so it can't trip pre-loop.
-    esp_task_wdt_reset();
-    if (!Update.begin(total > 0 ? (size_t)total : UPDATE_SIZE_UNKNOWN)) {
-        http.end();
-        alertPattern.onFirmwareUpdateFinish();
-        ackFail(Update.errorString(), 0);
-        return;
-    }
-
-    WiFiClient* stream = http.getStreamPtr();
-    const size_t bufSize = 1024;
-    uint8_t buf[bufSize];
-    size_t written = 0;
-    uint32_t lastBlinkMs = millis();
-    while (http.connected() && (total <= 0 || (int)written < total)) {
-        // The download can run far longer than the 15s loop watchdog (slow TLS /
-        // weak WiFi). Feed the WDT every iteration — including stalls (avail==0) —
-        // so a long-but-healthy pull isn't reset mid-flash, which would leave the
-        // device on the old firmware (the "updated but version unchanged" bug).
-        esp_task_wdt_reset();
-        size_t avail = stream->available();
-        if (avail == 0) { delay(1); continue; }
-        size_t toRead = avail > bufSize ? bufSize : avail;
-        int got = stream->readBytes(buf, toRead);
-        if (got <= 0) continue;
-        size_t wrote = Update.write(buf, got);
-        if (wrote != (size_t)got) {
-            Log::error(TAG_MQTT, "Update.write short %u/%d", (unsigned)wrote, got);
-            break;
-        }
-        written += wrote;
-        // Keep the GPIO26 indicator alive — main loop() isn't running.
-        if (millis() - lastBlinkMs > 50) {
-            alertPattern.update();
-            lastBlinkMs = millis();
-        }
-        // Yield to the watchdog / network stack.
-        yield();
-    }
-    http.end();
-
-    // Never commit a partial image. A dropped TLS stream (weak link) exits the
-    // loop with written<total; Update.end(true) would otherwise finalize the
-    // truncated flash and set it bootable — a brick risk. Abort instead.
-    if (total > 0 && written != (size_t)total) {
-        Update.abort();
-        alertPattern.onFirmwareUpdateFinish();
-        ackFail("incomplete download", (int)written);
-        return;
-    }
-    if (total <= 0 && written < 100000u) {
-        Update.abort();
-        alertPattern.onFirmwareUpdateFinish();
-        ackFail("image too small", (int)written);
-        return;
-    }
-
-    if (!Update.end(true)) {
-        alertPattern.onFirmwareUpdateFinish();
-        ackFail(Update.errorString(), 0);
-        return;
-    }
-
-    Log::info(TAG_MQTT, "ota_pull complete: %u bytes flashed, restarting", (unsigned)written);
-    char ack[256];
-    snprintf(ack, sizeof(ack),
-        "{\"request_id\":\"%s\",\"status\":\"ok\",\"cmd\":\"ota_pull\","
-        "\"bytes\":%u,\"restarting\":true}", requestId, (unsigned)written);
-    _mqtt.publish(_topicCmdAck, ack);
-    _mqtt.loop();   // flush the ack to the broker before we reboot
-
-    // Play the finish blink, then reboot — same handoff as HTTP-push path.
+    const char* error = downloadVerifiedOta(url, sha256, sizeBytes,
+        [&]() { esp_task_wdt_reset(); alertPattern.update(); },
+        [&](size_t written, size_t) { ack("progress", "Downloading and verifying", written); });
     alertPattern.onFirmwareUpdateFinish();
-    uint32_t finishDeadline = millis() + 2500;
-    while (alertPattern.isFirmwareUpdateActive()
-            && (int32_t)(millis() - finishDeadline) < 0) {
-        alertPattern.update();
-        delay(10);
-    }
+    if (error) { ack("error", error, 0); return; }
+    ack("ok", "SHA-256 verified; restarting", sizeBytes);
+    delay(500);
     ESP.restart();
 }
 

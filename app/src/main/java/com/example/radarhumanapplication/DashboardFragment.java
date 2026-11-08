@@ -113,6 +113,20 @@ public class DashboardFragment extends Fragment
         etUsername = v.findViewById(R.id.et_username);
         etPassword = v.findViewById(R.id.et_password);
         btnConnect = v.findViewById(R.id.btn_connect);
+        View projectBroker = v.findViewById(R.id.btn_project_broker);
+        if (projectBroker != null) projectBroker.setOnClickListener(x ->
+                new AlertDialog.Builder(requireContext())
+                        .setTitle("Use project MQTT")
+                        .setMessage("Fill in the project's TLS broker and username. Enter the "
+                                + "project MQTT password, then tap Connect. Saved profiles are "
+                                + "kept; configure the ESP32's broker separately before testing OTA.")
+                        .setPositiveButton("Use project broker", (dialog, which) -> {
+                            etHost.setText(BrokerEndpoint.DEFAULT_HOST);
+                            etPort.setText(String.valueOf(BrokerEndpoint.DEFAULT_PORT));
+                            etUsername.setText(BrokerEndpoint.DEFAULT_USERNAME);
+                            etPassword.setText("");
+                        })
+                        .setNegativeButton("Cancel", null).show());
         tvMqttStatus = v.findViewById(R.id.tv_mqtt_status);
         tvDeviceStatus = v.findViewById(R.id.tv_device_status);
         tvTarget1 = v.findViewById(R.id.tv_target1);
@@ -754,13 +768,13 @@ public class DashboardFragment extends Fragment
         }
 
         String host = getText(etHost);
-        int port = parseInt(getText(etPort), 1883);
+        int port = parseInt(getText(etPort), BrokerEndpoint.DEFAULT_PORT);
         String device = getText(etDeviceName);
         String user = getText(etUsername);
         String pass = getText(etPassword);
 
-        if (host.isEmpty()) {
-            etHost.setError("Required");
+        if (!BrokerEndpoint.isValid(host, port)) {
+            etHost.setError("Use a valid broker; project MQTT: systemdeveloper.ddns.net:8883 (TLS)");
             return;
         }
         if (device.isEmpty()) device = "HumanRadar";
@@ -919,7 +933,7 @@ public class DashboardFragment extends Fragment
                     ConnectionProfile p = ConnectionProfile.create(
                             name,
                             getText(etHost),
-                            parseInt(getText(etPort), 1883),
+                            parseInt(getText(etPort), BrokerEndpoint.DEFAULT_PORT),
                             getText(etDeviceName),
                             getText(etUsername),
                             getText(etPassword));
@@ -1149,13 +1163,11 @@ public class DashboardFragment extends Fragment
         SharedPreferences prefs = requireContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         // First-run defaults point at the hosted broker so a fresh install
         // can connect without the user typing an IP. Saved prefs always win.
-        etHost.setText(prefs.getString("host", DEFAULT_BROKER_HOST));
-        etPort.setText(String.valueOf(prefs.getInt("port", DEFAULT_BROKER_PORT)));
+        etHost.setText(prefs.getString("host", BrokerEndpoint.DEFAULT_HOST));
+        etPort.setText(String.valueOf(prefs.getInt("port", BrokerEndpoint.DEFAULT_PORT)));
         etDeviceName.setText(prefs.getString("device", "HumanRadar"));
-        etUsername.setText(prefs.getString("user", ""));
+        etUsername.setText(prefs.getString("user", prefs.contains("host") ? "" : BrokerEndpoint.DEFAULT_USERNAME));
         etPassword.setText(prefs.getString("pass", ""));
     }
 
-    private static final String DEFAULT_BROKER_HOST = "119.59.99.155";
-    private static final int    DEFAULT_BROKER_PORT = 8883;
 }
