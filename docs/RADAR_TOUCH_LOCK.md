@@ -62,3 +62,5 @@ Push GitHub, sync SSH ผ่าน Tailscale และยืนยันส่�
 ตามคำขอผู้ใช้ เอากล่องคำแนะนำและ tint คลุม Radar ออก ใช้ badge เลข 12sp ขนาด 32dp มุมขวาบน กดค้างนับ 2 → 1 แล้วปลดล็อกเมื่อครบ 2 วินาที ยกเลิกแล้วกลับ 2 คำแนะนำแบบ spoken accessibility และ long-click ยังคงอยู่
 
 69 JVM tests และ UI regressions 11 tests ผ่าน 43.822 s หลังแก้ System UI ANR ของ emulator ตรวจภาพจริงทั้งแนวตั้ง, หมุนแนวนอน, Full Screen และเลข 1 ระหว่างกดค้างด้วย adb motionevent แล้ว Code review APPROVE ไม่มี finding ค้าง
+
+เผยแพร่ v1.1.7 / versionCode 111 จาก e86bcf0, CI 42520243165 success; mirror v1.1.7-baa00d3cad87 ตรวจ app/firmware/bridge hash/size เทียบ GitHub API ผ่าน APK 8,169,923 bytes, SHA-256 8405981d53a01f9e0c998e64dfb0e68939af8fd00e96b4df203e5cb95142e10d ลายเซ็นตรงรุ่นก่อน ตรวจ release layout ที่ optimize เป็น res/v9.xml แล้วมี TextView ตัวเลขเพียงตัวเดียว ไม่มี MaterialButton/card คำแนะนำ และยืนยัน countdown/fence/รหัสโปรเจกต์ใน APK ส่ง LINE จาก SSH server สำเร็จ
