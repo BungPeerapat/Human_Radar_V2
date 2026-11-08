@@ -55,7 +55,10 @@
 - ยืนยัน MQTT OTA: `1.0.61` → test1; HTTP OTA: test1 → test2; manual rollback: test2 → test1; OTA เข้า bridge และกลับ test2 สำเร็จ
 - Android updater จริงบน emulator รับ SHA rejection อย่างถูกต้อง แล้วติดตั้ง Linux-server-built `1.1.0-mqtt-server` และตรวจรุ่นสำเร็จใน live test 63.859 วินาที
 - ทดสอบ ESP32 ดาวน์โหลด HTTPS/redirect จาก GitHub Releases เดิมครบจนถึง hash check โดยจงใจใช้ hash ผิดเพื่อไม่ downgrade จึงไม่จำเป็นต้องย้าย production firmware hosting
-- ยังไม่ย้ายเข้า `done` เพราะรอผลตัดไฟจริง; อ่านรายละเอียดและข้อจำกัดใน `docs/MQTT_OTA_TEST_RESULTS.md`
+- ทดสอบตัดไฟจริงผ่านแล้ว แต่ยังไม่ย้ายเข้า `done` เพราะ brownout หลัง OTA; อ่านรายละเอียดและข้อจำกัดใน `docs/MQTT_OTA_TEST_RESULTS.md`
 
 - ทดสอบตัดไฟที่ 19% ผ่าน: รุ่นเดิมคงอยู่ reset=1, boots 701 → 702; OTA ซ้ำ test2 สำเร็จ และกลับ server-built firmware สำเร็จภายหลัง
 - พบ brownout จริงซ้ำตอนเริ่ม WiFi และระหว่างใช้งาน กำลังตรวจไฟเลี้ยงกับผู้ใช้ จึงยังไม่ปิดเกณฑ์ rollout
+
+- Public release v1.1.0 ติดตั้งผ่าน GitHub HTTPS + MQTT สำเร็จและยังส่ง targets ได้ แต่มี brownout ช่วงบูต 2 ครั้ง (bo 740 → 742) จึงยังไม่ปิด gate ด้านไฟเลี้ยง
+- ปิด temporary HTTPS container และ UFW 9443 ของการทดสอบแล้ว เก็บ recovery binaries/private evidence ไว้

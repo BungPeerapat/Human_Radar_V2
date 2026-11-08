@@ -105,9 +105,9 @@ Hash ยืนยันว่าไฟล์ตรงกับ metadata ที�
 - [x] ผ่านการตัดไฟที่ progress 19% และ OTA รอบถัดไปบนบอร์ดจริง พร้อม raw evidence
 - [x] มี targets จาก HLK-LD2450 จริงผ่าน MQTT ถึง Android emulator
 - [ ] แก้ brownout ของบอร์ดทดสอบและยืนยัน health/targets ต่อเนื่องหลังแก้ไฟเลี้ยง
-- [ ] เตรียม signed app release ด้วยคีย์เดิมและเผยแพร่ manifest เพื่อให้ผู้ใช้เดิมอัปเดตผ่าน Check Update ได้
+- [x] เผยแพร่ signed v1.1.0 ด้วยคีย์เดิมและ manifest versionCode 91; ผู้ใช้ยืนยันอัปเดตแล้วต่อ MQTT ได้
 - [ ] หลัง hardware gates ผ่าน ให้คืนค่าบอร์ดเป็น transport ที่ต้องการใช้งาน ตรวจ health/config/OTA และคง provisioning ของอุปกรณ์
-- [ ] ปิด HTTPS container ทดสอบและลบ UFW rule 9443 เฉพาะงานนี้ หลังไม่มีการทดสอบ/กู้คืนค้าง
+- [x] ปิด HTTPS container ทดสอบและลบ UFW rules 9443 เฉพาะงานนี้แล้ว; recovery binaries ยังคงอยู่และใช้ public GitHub OTA ได้
 - [ ] สรุปผลสุดท้าย ย้าย Tasks 001–002 ไป done และอัปเดต checkout บนเซิร์ฟเวอร์ก่อน rollout
 
 ## หลักฐานการตรวจรับ

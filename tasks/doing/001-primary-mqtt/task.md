@@ -30,13 +30,13 @@
 - [x] ยืนยัน targets จาก HLK-LD2450 จริงผ่าน MQTT ถึง Android emulator: 112 ข้อความใน 20 วินาที และหน้า Radar frame counter เพิ่ม; ยังมี brownout ต้องแก้ก่อนรับรองการทำงานต่อเนื่อง
 - [x] ทดสอบ transport interruption, broker restart และ ESP32 reboot; ยังไม่ได้ตัด WiFi router จริง
 - [x] ทดสอบ WSS หากยังประกาศรองรับ และตรวจว่า topic ที่ระบบใช้ทั้งหมดผ่าน ACL ใหม่
-- [ ] ประสานทดสอบ OTA ผ่าน broker ใหม่ตามงาน `002` แล้วอัปเดตคู่มือการตั้งค่าและ rollback
+- [x] ทดสอบ OTA ผ่าน broker ใหม่, public GitHub release v1.1.0 และอัปเดตคู่มือการตั้งค่า/rollback; ไฟเลี้ยง startup ยังรอตรวจ
 
 ## เกณฑ์ตรวจรับ
 
 - [x] การตั้งค่าใหม่เชื่อมต่อ MQTT ใหม่ได้จริง และค่า broker เดิมที่ยังเหลือมีเหตุผลระบุชัดเจน
 - [x] อุปกรณ์ที่มี preferences/NVS เดิมย้ายได้ตามขั้นตอน โดยคง WiFi, device name และค่าผู้ใช้ที่ไม่เกี่ยวข้อง
-- [x] แอป Android ที่รันจริงบน emulator API 36 และ ESP32 จริงส่ง/รับคำสั่ง/ACK และข้อมูล discovery ได้; UART targets ยังรอผลตาม checklist ข้างต้น
+- [x] แอป Android ที่รันจริงบน emulator API 36 และ ESP32 จริงส่ง/รับคำสั่ง/ACK และข้อมูล discovery/targets ได้; ผู้ใช้ยืนยัน signed v1.1.0 ต่อ MQTT ได้แล้ว
 - [x] ผู้ใช้ไม่ระบุบัญชีหรือใช้รหัสผิดถูกปฏิเสธ และสิทธิ์ topic ถูกต้อง
 - [ ] OTA และการกู้คืนหลังการย้ายผ่านเกณฑ์ของงาน `002` ก่อนเปิดใช้จริงทั้งหมด
 - [x] ไม่มี secret ใหม่ใน repository และมีคำแนะนำเลือก TLS สำหรับพอร์ต `8883`
@@ -52,8 +52,11 @@ Broker ใหม่ติดตั้งแล้ว แต่ยังต้อ
 - 2026-11-08: Codex เริ่มงานและย้ายเข้า `doing`; implementation checkpoint `775ea41` บน `dev`
 - 62 JVM tests ผ่าน; live Android TLS/WSS reconnect tests ผ่านและ health command/ACK ฟื้นหลัง restart broker จริง
 - บอร์ด `HumanRadarBung` MAC `08:d1:f9:34:91:b4` ใช้ broker ใหม่แล้ว; firmware ล่าสุดที่ยืนยัน `1.1.0-mqtt-server` build จากเซิร์ฟเวอร์ Linux
-- MQTT config command `publish_interval_ms=100` ได้ ACK `ok`; ยังไม่พบ UART targets จึงไม่ปิดงานข้อนี้
+- รอบแรก MQTT config command `publish_interval_ms=100` ได้ ACK `ok` แต่ยังไม่พบ targets; ผลรอบถัดไปอยู่ท้ายบันทึก
 - หลักฐานละเอียด: `docs/MQTT_OTA_TEST_RESULTS.md`; ขั้นตอนส่งต่อ: `docs/SERVER_HANDOFF.md`
 
 - หลังผู้ใช้เสียบ USB ใหม่ พบ targets จริงและแอปทดสอบต่อ broker ได้; แอปเดิมในมือถือยัง reset by peer รออัปเดตผ่าน signed release/Check Update และตรวจซ้ำ
-- ยังคง doing เนื่องจากไฟเลี้ยง brownout และยังไม่ส่งมอบ signed app release ให้ผู้ใช้เดิมผ่านช่องทางอัปเดต
+- ยังคง doing เนื่องจากไฟเลี้ยง brownout; signed app release ส่งมอบและผู้ใช้ตรวจรับการเชื่อมต่อแล้ว
+
+- เผยแพร่ App v1.1.0 versionCode 91 ผ่าน Check Update ด้วยคีย์เซ็นเดิมแล้ว ผู้ใช้ยืนยันเชื่อมต่อ MQTT ได้
+- UART/targets หลัง restart โมดูลผ่าน 180 ข้อความ/32 วินาที; ยังรอไฟเลี้ยงหลัง OTA startup ที่พบ brownout เพิ่ม 2 ครั้งก่อนปิด rollout gate

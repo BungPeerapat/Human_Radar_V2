@@ -51,6 +51,19 @@
 - APK ทดสอบ build สำเร็จและตรวจ SHA-256 หลังดาวน์โหลดผ่าน HTTPS แล้ว ส่งลิงก์ชั่วคราวผ่าน LINE; ยังไม่ใช่ release ที่ signed ด้วยคีย์ production และยังไม่ปรากฏใน Check Update
 - App Check Update อ่าน `update.json` จาก GitHub Releases; public manifest ปัจจุบันยังเป็น `1.0.61`, versionCode 77 ต้องเผยแพร่ signed release ใหม่ก่อนผู้ใช้เดิมจะพบเวอร์ชัน MQTT ใหม่นี้
 
+## ผล release v1.1.0 และไฟเลี้ยงรอบล่าสุด
+
+- เผยแพร่ `v1.1.0` จาก commit `84a70b950990937f5ad85d8a2c32ced0e80c9bba`; CI run `42443082451` สำเร็จ มี APK, firmware, bridge และ manifest รวม 6 assets
+- APK versionCode 91, 8,160,007 bytes, SHA-256 `3a006b7ff6b3241b0d313dfaa11fbf9ae96fb362aa655f1814769ccf9a711fb5`; signing certificate SHA-256 ตรงกับ v1.0.61: `1850bfe58c0b293bb0ea9d1fdebec1b1e3c3d61957b8a924d178d3a7e3f3a11a`
+- ตรวจ public latest manifest ทั้ง update/firmware/bridge เป็น versionCode 91 และดาวน์โหลด public APK มาตรวจ hash/ขนาดตรงกับ CI; ผู้ใช้ยืนยันอัปเดตแอปแล้วเชื่อมต่อ MQTT ได้
+- CI แบบ Draft ได้รับการ review และผ่าน actionlint; live preflight tests ปฏิเสธ published-version collision และ draft target mismatch ตามคาด
+- หลัง publish ด้วย CLI มี tag-triggered run `42443479955` ถูก guard ปฏิเสธเพราะเวอร์ชันเผยแพร่แล้ว จึงไม่ build หรือเขียนทับ assets; signed draft run ก่อน publish เป็น run ที่สำเร็จ
+- เมื่อจ่ายไฟจากภายนอก มี health 15 samples ตลอด 126.3 วินาที: boot count 973, brownout counter 740 คงเดิม แต่ aggregate sample ไม่ผ่านเพราะ targets ขาดช่วง
+- หลังผู้ใช้ปิด–เปิดไฟ HLK-LD2450 (แหล่งจ่ายแยกและ GND ร่วมตามผู้ใช้ยืนยัน) รับ targets 180 ข้อความใน 32 วินาที, frame counter 1177 → 1535, error count 18 คงเดิม และ boot/brownout counter คงเดิม; sample นี้ผ่าน
+- สั่ง OTA ด้วย manifest/URL จริงจาก public GitHub release: ติดตั้ง `1.1.0` และตรวจ health หลัง reboot ได้ โดยไม่ใช้ USB data แต่พบ brownout เพิ่ม 2 ครั้ง (740 → 742), boots 973 → 976 ระหว่าง startup
+- หลังบูต v1.1.0 มี targets 82 ข้อความในช่วงตรวจ 30 วินาทีและ health ที่ uptime 16 → 46 โดยไม่รีเซ็ตเพิ่ม; ไม่ถือว่าผ่านเกณฑ์ไฟเลี้ยงสะอาด เพราะ brownout เพิ่มและข้อมูล UART ยังมี error 1 ครั้ง
+- ปิดและลบ container `human-radar-ota-test` แล้ว ลบเฉพาะ UFW rules 9443 ที่มี comment ของงานทดสอบ; broker/LINE service คงทำงาน เก็บ recovery binaries และ raw evidence ไว้ใน directory ที่ root อ่านได้
+
 ## จุดที่พบและแก้ระหว่างทดสอบ
 
 1. Android ไม่เปิด TLS แม้ใช้ port 8883 — เปลี่ยน transport selection ตาม project endpoint
@@ -67,7 +80,7 @@
 ## เกณฑ์ที่ยังรอยืนยัน
 
 - ตรวจและแก้ไฟเลี้ยงของบอร์ด/โมดูล: การตัดไฟระหว่าง OTA และ OTA ซ้ำผ่านแล้ว แต่ยังพบ brownout ในการใช้งานหลังจากนั้น ต้องทดสอบต่อเนื่องหลังแก้สาเหตุ
-- ผู้ใช้แจ้งแอปเดิม Connect แล้ว Disconnect และมี Connection reset by peer; ส่ง APK ทดสอบ TLS แล้ว และต้องจัดส่ง signed release ผ่าน Check Update โดยตรวจ signature/manifest ก่อนเผยแพร่
+- ผู้ใช้เดิมได้รับ signed v1.1.0 ผ่าน Check Update และยืนยันเชื่อมต่อได้แล้ว; ประเด็นที่ยังเปิดคือ brownout ช่วงบูตและความต่อเนื่องของ UART หลังเปลี่ยนไฟ
 - ชุดส่งต่อรับ implementation และเอกสารถึง `acd67dc` บน branch `dev` แล้ว และตรวจ working tree บนเซิร์ฟเวอร์ว่าง; หลัง hardware gates ผ่านต้องอัปเดตผลสุดท้ายอีกครั้งก่อนปิดงาน
 
 ไม่ได้ทดสอบการตัด WiFi router จริงหรือสร้าง firmware ที่ boot crash โดยจงใจ จึงไม่อ้างว่าครอบคลุมความขัดข้องทางไฟฟ้า/bootloader ทุกแบบ การทดสอบข้างต้นไม่ใช่การประกาศ release ใหม่บน GitHub หรือ rollout ไปทุกอุปกรณ์

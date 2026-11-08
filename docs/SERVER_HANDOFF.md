@@ -4,15 +4,15 @@
 
 ใช้เซิร์ฟเวอร์เป็นพื้นที่พัฒนาหลักหลังตรวจรับ MQTT และ OTA บน ESP32 จริง โค้ดที่ build ผ่านยังไม่ถือว่าผ่านการตรวจรับ hardware ให้ตรวจผลล่าสุดใน `tasks/doing/` หรือ `tasks/done/` ก่อนเริ่มงานต่อ
 
-ณ 2026-11-08: MQTT server และ SSH ผ่าน Tailscale พร้อม, implementation checkpoint `775ea41`, firmware หลัก/bridge build บน Linux ได้แล้ว งาน 001–002 ยังอยู่ `doing`: ตัดไฟ OTA/อัปเดตซ้ำและ UART targets ผ่านแล้ว แต่ยังต้องแก้ brownout และส่งมอบ signed app release บน `HumanRadarBung` (ESP32-D0WD-V3, flash 4 MB, MAC `08:d1:f9:34:91:b4`)
+ณ 2026-11-08: MQTT server และ SSH ผ่าน Tailscale พร้อม, implementation checkpoint `775ea41`, firmware หลัก/bridge build บน Linux ได้แล้ว งาน 001–002 ยังอยู่ `doing`: ตัดไฟ OTA/อัปเดตซ้ำและ UART targets ผ่านแล้ว เผยแพร่ signed v1.1.0 ให้ผู้ใช้ผ่าน Check Update แล้ว แต่ยังต้องตรวจ brownout ช่วงบูตหลัง OTA บน `HumanRadarBung` (ESP32-D0WD-V3, flash 4 MB, MAC `08:d1:f9:34:91:b4`)
 
 ## ผลส่งต่อ checkout ที่ตรวจแล้ว
 
 - ย้ายประวัติ Git ผ่าน bundle และ fast-forward branch `dev` บนเซิร์ฟเวอร์ถึง `b7cc25d` แล้ว; ไม่ได้ push GitHub
 - เก็บไฟล์ source ที่เคยคัดลอกทดสอบบนเซิร์ฟเวอร์ไว้ใน Git stash ก่อนปรับ checkout; ไม่ต้อง apply stash ทับ implementation ล่าสุด
 - หลัง fast-forward ตรวจ `git status --short` ว่าง และรัน `bash tools/test-native.sh` ผ่าน รวม 12 OTA transfer scenarios และการเทียบ firmware ทั้งสาม tree
-- ตรวจจากเซิร์ฟเวอร์ผ่าน MQTT/TLS ได้ health ACK จาก `HumanRadarBung`, firmware `1.1.0-mqtt-server`; ยังไม่มี UART targets ในรอบตรวจ จึงคง hardware gates ไว้ใน `doing`
-- ผลล่าสุด: ตัดไฟ OTA 19% และ OTA ซ้ำผ่านแล้ว มี targets จริงถึงแอป แต่ยังพบ brownout และรอ signed app release; อ่านผลล่าสุดใน `MQTT_OTA_TEST_RESULTS.md`
+- ตรวจจากเซิร์ฟเวอร์ผ่าน MQTT/TLS ได้ health ACK จาก `HumanRadarBung`, firmware `1.1.0-mqtt-server` ในรอบส่งต่อแรก; ผลรอบล่าสุดเป็น `1.1.0` และมี targets แล้วตามรายงานผลทดสอบ
+- ผลล่าสุด: ตัดไฟ OTA 19% และ OTA ซ้ำผ่านแล้ว มี targets จริงถึงแอปและผู้ใช้ยืนยัน signed app v1.1.0 ต่อได้ แต่ยังพบ brownout ช่วงบูตหลัง OTA; อ่านผลล่าสุดใน `MQTT_OTA_TEST_RESULTS.md`
 
 ## การเชื่อมต่อ
 
@@ -100,9 +100,9 @@ MQTT ส่งคำสั่ง `ota_pull` พร้อม URL, `sha256`, `size
 
 การแฟลช/กดปุ่ม USB ยังอยู่ฝั่ง Windows ที่เสียบบอร์ด การเข้า SSH ไม่ทำให้เซิร์ฟเวอร์เห็น COM port อัตโนมัติ หลัง OTA ผ่านจริงแล้วจึงส่งคำสั่งจากเซิร์ฟเวอร์ได้โดยไม่ใช้ USB แต่เก็บวิธีกู้คืนไว้เสมอ
 
-Firmware `1.1.0-mqtt-server` ที่ทดสอบล่าสุด build บน Linux server และติดตั้งบนบอร์ดจริงผ่าน Android/MQTT แล้ว การทดสอบใช้ HTTPS container `human-radar-ota-test` พอร์ต 9443 ชั่วคราวและไฟล์ใน `/root/project/MQTT_Server/ota-test-artifacts` ไม่ใช่การย้าย production release hosting จาก GitHub
+Firmware ล่าสุดบนบอร์ดคือ public release `1.1.0` ติดตั้งผ่าน GitHub HTTPS + MQTT แล้ว ก่อนหน้านั้น `1.1.0-mqtt-server` build บน Linux server และติดตั้งผ่าน Android/MQTT สำเร็จ การทดสอบใช้ HTTPS container `human-radar-ota-test` พอร์ต 9443 ชั่วคราวและไฟล์ใน `/root/project/MQTT_Server/ota-test-artifacts` ไม่ใช่การย้าย production release hosting จาก GitHub
 
-หลังตรวจรับ hardware ครบให้หยุด container ทดสอบและลบ UFW rule เฉพาะ 9443 ที่เพิ่มสำหรับงานนี้ ก่อนปิดอย่าลบไฟล์ firmware ที่ยังต้องใช้กู้คืนบอร์ดทดสอบ
+หยุดและลบ container ทดสอบพร้อม UFW rules เฉพาะ 9443 ของงานนี้แล้ว เก็บไฟล์ firmware กู้คืนไว้ใน directory เดิม (root อ่านได้) ใช้ public GitHub release สำหรับ OTA ต่อไป; ลิงก์ APK ทดสอบชั่วคราวใน LINE เดิมปิดแล้ว ให้ใช้ Check Update v1.1.0
 
 สำรอง partition/NVS ของบอร์ดทดสอบไว้ใน `%USERPROFILE%\.ssh\human-radar-backups` บน Windows มีข้อมูลลับ ห้ามนำมาใส่ใน repository การสำรอง flash ทั้งก้อนเคย checksum ไม่ผ่าน; อย่าเรียกว่า full backup ที่ใช้กู้คืนได้
 
