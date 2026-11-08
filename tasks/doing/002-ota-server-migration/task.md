@@ -29,7 +29,7 @@
 - [x] ตรวจ manual rollback จริงและเก็บไฟล์ firmware ทดสอบที่ใช้กู้คืนได้; ไม่อ้าง auto rollback ทุกกรณีหรือ full flash backup ที่ checksum ไม่ผ่าน
 - [x] ทดสอบ happy path บน ESP32 จริงผ่าน MQTT ใหม่ รวม ACK/progress, reboot, version verification และ reconnect
 - [x] ทดสอบ URL ผิด, download ขาดช่วง, hash ไม่ตรง, image ใหญ่เกิน, HTTPS stream ขาดและ broker restart บนบอร์ดจริง
-- [ ] ทดสอบการตัดไฟจริงระหว่าง OTA และการอัปเดตอีกครั้งหลังเสียบไฟกลับ รอผู้ใช้ตามการเรียกผ่าน LINE
+- [x] ตัดไฟจริงที่ OTA 19%, บูต image เดิมได้ และ OTA ไป test2/กลับ server-built firmware สำเร็จหลังเสียบไฟกลับ
 - [x] ยืนยันหลังอัปเดต, manual rollback และ bridge recovery ว่ายังสั่ง OTA รอบถัดไปได้ พร้อม WiFi/MQTT settings ที่ใช้งานได้
 - [x] เขียน migration runbook, recovery runbook และ checklist ก่อน release ใน `docs/OTA_SERVER_MIGRATION.md`
 - [ ] ตรวจรับ hardware gates และแก้ปัญหาที่พบก่อนอนุญาต rollout งาน `001`
@@ -39,7 +39,7 @@
 - [x] มีเอกสารอธิบายระบบ OTA ปัจจุบัน พร้อมรายการสิ่งที่ต้องแก้/ไม่ต้องแก้เมื่อย้าย server และเหตุผลจากโค้ด/ผลตรวจ
 - [x] ESP32 จริงอัปเดตผ่าน MQTT ใหม่สำเร็จโดยไม่ใช้สาย data ระหว่างกระบวนการปกติ และตรวจรุ่นหลัง reboot ได้
 - [x] อัปเดตซ้ำอีกรอบได้หลัง migration เพื่อพิสูจน์ว่าไม่ใช่อัปเดตได้ครั้งเดียวแล้วขาดการเชื่อมต่อ
-- [ ] ผลทดสอบกรณีล้มเหลวระบุพฤติกรรมจริงและการกู้คืนได้ ไม่อ้างว่าปลอดภัยจากการอ่านโค้ดเพียงอย่างเดียว
+- [x] มีผลบอร์ดจริงของ download/hash/size/ไฟดับและ OTA ซ้ำ; บันทึก brownout ที่ยังต้องแก้ ไม่อ้างความปลอดภัยจากโค้ดอย่างเดียว
 - [x] ระบุชัดว่ากรณีใดต้อง USB เช่น initial provisioning หรือเครื่องที่บูต/เชื่อมต่อไม่ได้
 - [x] ไม่มีการปิด broker เดิมหรือลบเส้นทาง OTA เดิม; broker เก่าเสียอยู่ก่อนเริ่มงานตามผู้ใช้แจ้ง
 
@@ -56,3 +56,6 @@
 - Android updater จริงบน emulator รับ SHA rejection อย่างถูกต้อง แล้วติดตั้ง Linux-server-built `1.1.0-mqtt-server` และตรวจรุ่นสำเร็จใน live test 63.859 วินาที
 - ทดสอบ ESP32 ดาวน์โหลด HTTPS/redirect จาก GitHub Releases เดิมครบจนถึง hash check โดยจงใจใช้ hash ผิดเพื่อไม่ downgrade จึงไม่จำเป็นต้องย้าย production firmware hosting
 - ยังไม่ย้ายเข้า `done` เพราะรอผลตัดไฟจริง; อ่านรายละเอียดและข้อจำกัดใน `docs/MQTT_OTA_TEST_RESULTS.md`
+
+- ทดสอบตัดไฟที่ 19% ผ่าน: รุ่นเดิมคงอยู่ reset=1, boots 701 → 702; OTA ซ้ำ test2 สำเร็จ และกลับ server-built firmware สำเร็จภายหลัง
+- พบ brownout จริงซ้ำตอนเริ่ม WiFi และระหว่างใช้งาน กำลังตรวจไฟเลี้ยงกับผู้ใช้ จึงยังไม่ปิดเกณฑ์ rollout

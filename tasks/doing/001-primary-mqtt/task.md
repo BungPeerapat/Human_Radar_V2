@@ -27,7 +27,7 @@
 - [x] วางลำดับอัปเดตและการกลับไปใช้ broker เดิมสำหรับอุปกรณ์ที่ยังไม่ย้าย เพื่อไม่ให้ตัดช่องทาง OTA
 - [x] แก้ Arduino tree `Human_Radar_V2/` และ PlatformIO tree `firmware/` ให้ตรงกัน; ตรวจ `bridge/` ด้วย
 - [x] ทดสอบ Android ↔ MQTT ↔ ESP32: discovery, status/LWT, config, commands และ ACK
-- [ ] ยืนยัน targets จาก UART ของ HLK-LD2450 ผ่าน MQTT ถึงแอป: sample 10 วินาทียังไม่พบ frame รอยืนยันว่าโมดูลต่ออยู่หรือไม่
+- [x] ยืนยัน targets จาก HLK-LD2450 จริงผ่าน MQTT ถึง Android emulator: 112 ข้อความใน 20 วินาที และหน้า Radar frame counter เพิ่ม; ยังมี brownout ต้องแก้ก่อนรับรองการทำงานต่อเนื่อง
 - [x] ทดสอบ transport interruption, broker restart และ ESP32 reboot; ยังไม่ได้ตัด WiFi router จริง
 - [x] ทดสอบ WSS หากยังประกาศรองรับ และตรวจว่า topic ที่ระบบใช้ทั้งหมดผ่าน ACL ใหม่
 - [ ] ประสานทดสอบ OTA ผ่าน broker ใหม่ตามงาน `002` แล้วอัปเดตคู่มือการตั้งค่าและ rollback
@@ -54,3 +54,6 @@ Broker ใหม่ติดตั้งแล้ว แต่ยังต้อ
 - บอร์ด `HumanRadarBung` MAC `08:d1:f9:34:91:b4` ใช้ broker ใหม่แล้ว; firmware ล่าสุดที่ยืนยัน `1.1.0-mqtt-server` build จากเซิร์ฟเวอร์ Linux
 - MQTT config command `publish_interval_ms=100` ได้ ACK `ok`; ยังไม่พบ UART targets จึงไม่ปิดงานข้อนี้
 - หลักฐานละเอียด: `docs/MQTT_OTA_TEST_RESULTS.md`; ขั้นตอนส่งต่อ: `docs/SERVER_HANDOFF.md`
+
+- หลังผู้ใช้เสียบ USB ใหม่ พบ targets จริงและแอปทดสอบต่อ broker ได้; แอปเดิมในมือถือยัง reset by peer รออัปเดตผ่าน signed release/Check Update และตรวจซ้ำ
+- ยังคง doing เนื่องจากไฟเลี้ยง brownout และยังไม่ส่งมอบ signed app release ให้ผู้ใช้เดิมผ่านช่องทางอัปเดต

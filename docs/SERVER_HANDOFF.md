@@ -4,7 +4,7 @@
 
 ใช้เซิร์ฟเวอร์เป็นพื้นที่พัฒนาหลักหลังตรวจรับ MQTT และ OTA บน ESP32 จริง โค้ดที่ build ผ่านยังไม่ถือว่าผ่านการตรวจรับ hardware ให้ตรวจผลล่าสุดใน `tasks/doing/` หรือ `tasks/done/` ก่อนเริ่มงานต่อ
 
-ณ 2026-11-08: MQTT server และ SSH ผ่าน Tailscale พร้อม, implementation checkpoint `775ea41`, firmware หลัก/bridge build บน Linux ได้แล้ว งาน 001–002 ยังอยู่ `doing` เพราะรอทดสอบตัดไฟจริงและยืนยัน UART targets บน `HumanRadarBung` (ESP32-D0WD-V3, flash 4 MB, MAC `08:d1:f9:34:91:b4`)
+ณ 2026-11-08: MQTT server และ SSH ผ่าน Tailscale พร้อม, implementation checkpoint `775ea41`, firmware หลัก/bridge build บน Linux ได้แล้ว งาน 001–002 ยังอยู่ `doing`: ตัดไฟ OTA/อัปเดตซ้ำและ UART targets ผ่านแล้ว แต่ยังต้องแก้ brownout และส่งมอบ signed app release บน `HumanRadarBung` (ESP32-D0WD-V3, flash 4 MB, MAC `08:d1:f9:34:91:b4`)
 
 ## ผลส่งต่อ checkout ที่ตรวจแล้ว
 
@@ -12,7 +12,7 @@
 - เก็บไฟล์ source ที่เคยคัดลอกทดสอบบนเซิร์ฟเวอร์ไว้ใน Git stash ก่อนปรับ checkout; ไม่ต้อง apply stash ทับ implementation ล่าสุด
 - หลัง fast-forward ตรวจ `git status --short` ว่าง และรัน `bash tools/test-native.sh` ผ่าน รวม 12 OTA transfer scenarios และการเทียบ firmware ทั้งสาม tree
 - ตรวจจากเซิร์ฟเวอร์ผ่าน MQTT/TLS ได้ health ACK จาก `HumanRadarBung`, firmware `1.1.0-mqtt-server`; ยังไม่มี UART targets ในรอบตรวจ จึงคง hardware gates ไว้ใน `doing`
-- การตัดไฟระหว่าง OTA ยังรอผู้ใช้ช่วยกับ USB จริง
+- ผลล่าสุด: ตัดไฟ OTA 19% และ OTA ซ้ำผ่านแล้ว มี targets จริงถึงแอป แต่ยังพบ brownout และรอ signed app release; อ่านผลล่าสุดใน `MQTT_OTA_TEST_RESULTS.md`
 
 ## การเชื่อมต่อ
 

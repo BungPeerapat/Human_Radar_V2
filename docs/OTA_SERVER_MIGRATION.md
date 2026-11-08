@@ -102,8 +102,10 @@ Hash ยืนยันว่าไฟล์ตรงกับ metadata ที�
 - [x] Android, firmware หลัก, Arduino tree และ bridge มี implementation ตรงกันและ build/test ตามผลที่บันทึก
 - [x] ตรวจ auth/ACL, TLS/WSS, broker restart และ OTA/recovery บนบอร์ดทดสอบตามผลในเอกสาร
 - [x] Git checkout บนเซิร์ฟเวอร์รับ implementation และเอกสารที่ commit แล้ว; ไม่ได้เผยแพร่ release ใหม่บน GitHub
-- [ ] ผ่านการตัดไฟระหว่างเขียนและ OTA รอบถัดไปบนบอร์ดจริง พร้อม raw evidence
-- [ ] มี UART targets จาก HLK-LD2450 ผ่าน MQTT ถึงแอปจริง
+- [x] ผ่านการตัดไฟที่ progress 19% และ OTA รอบถัดไปบนบอร์ดจริง พร้อม raw evidence
+- [x] มี targets จาก HLK-LD2450 จริงผ่าน MQTT ถึง Android emulator
+- [ ] แก้ brownout ของบอร์ดทดสอบและยืนยัน health/targets ต่อเนื่องหลังแก้ไฟเลี้ยง
+- [ ] เตรียม signed app release ด้วยคีย์เดิมและเผยแพร่ manifest เพื่อให้ผู้ใช้เดิมอัปเดตผ่าน Check Update ได้
 - [ ] หลัง hardware gates ผ่าน ให้คืนค่าบอร์ดเป็น transport ที่ต้องการใช้งาน ตรวจ health/config/OTA และคง provisioning ของอุปกรณ์
 - [ ] ปิด HTTPS container ทดสอบและลบ UFW rule 9443 เฉพาะงานนี้ หลังไม่มีการทดสอบ/กู้คืนค้าง
 - [ ] สรุปผลสุดท้าย ย้าย Tasks 001–002 ไป done และอัปเดต checkout บนเซิร์ฟเวอร์ก่อน rollout

@@ -40,6 +40,17 @@
 | Linux firmware build | Firmware หลักและ bridge build ผ่านด้วย Espressif32 6.9.0 / Arduino 2.0.17 |
 | LINE บนเซิร์ฟเวอร์ | `human-radar-alert.service` active/enabled; server journal ยืนยันส่ง LINE สำเร็จ; local notification app ปิดได้ |
 
+## ผล hardware หลังผู้ใช้ช่วยตัดไฟ
+
+- ตัดไฟจริงระหว่าง MQTT OTA ที่ progress 19%: ไม่พบ commit/restarting ACK; หลังเสียบกลับ firmware ยังเป็น `1.1.0-mqtt-server`, reset reason 1 และ boot count 701 → 702
+- หลังตัดไฟ OTA ไป `1.1.0-mqtt-test2` สำเร็จ ตรวจ SHA/commit ACK และ health รุ่นใหม่จริง (boot count 703)
+- OTA กลับ Linux-server-built `1.1.0-mqtt-server` สำเร็จหลังเสียบ USB ใหม่; เก็บ `power-recovery-final-result.json` และ raw logs ในพื้นที่ส่วนตัว
+- พบ brownout จริงระหว่างทดสอบ: serial ระบุ `Brownout detector was triggered` ตอนเริ่ม WiFi; boot count/brownout counter ยังเพิ่มในรอบหลัง จึงยังไม่อ้างว่าไฟเลี้ยงเสถียร แม้มีช่วงที่ health ติดต่อกัน 15 วินาทีโดยไม่รีเซ็ต
+- ผู้ใช้ยืนยันว่าต่อ HLK-LD2450 แล้ว; sample 20 วินาทีรับ targets จริง 112 ข้อความ มี target present และ frame counter 167 → 389, error count 0
+- APK `1.1.0-mqtt-uat` บน emulator ต่อได้ (`connected`, device `online`, firmware ถูกต้อง); หน้า Radar รับข้อมูลจริงและ frame counter 20 → 432, error count 0 มีสถานะ NO DATA เป็นช่วง จึงต้องแก้ไฟเลี้ยงก่อนรับรองการทำงานต่อเนื่อง
+- APK ทดสอบ build สำเร็จและตรวจ SHA-256 หลังดาวน์โหลดผ่าน HTTPS แล้ว ส่งลิงก์ชั่วคราวผ่าน LINE; ยังไม่ใช่ release ที่ signed ด้วยคีย์ production และยังไม่ปรากฏใน Check Update
+- App Check Update อ่าน `update.json` จาก GitHub Releases; public manifest ปัจจุบันยังเป็น `1.0.61`, versionCode 77 ต้องเผยแพร่ signed release ใหม่ก่อนผู้ใช้เดิมจะพบเวอร์ชัน MQTT ใหม่นี้
+
 ## จุดที่พบและแก้ระหว่างทดสอบ
 
 1. Android ไม่เปิด TLS แม้ใช้ port 8883 — เปลี่ยน transport selection ตาม project endpoint
@@ -55,8 +66,8 @@
 
 ## เกณฑ์ที่ยังรอยืนยัน
 
-- การตัดไฟจริงระหว่าง OTA และการอัปเดตซ้ำหลังเสียบไฟกลับ: รอผู้ใช้ช่วยถอด/เสียบ USB ตามสัญญาณ LINE; ห้ามถือว่าผ่านจากการตัด HTTP connection
-- ข้อมูล UART/targets: sample 10 วินาทีไม่พบ targets แม้ health/config/OTA ทำงาน รอยืนยันว่า HLK-LD2450 ต่ออยู่หรือไม่ จึงยังไม่อ้างว่า UART → MQTT → radar rendering ผ่าน
+- ตรวจและแก้ไฟเลี้ยงของบอร์ด/โมดูล: การตัดไฟระหว่าง OTA และ OTA ซ้ำผ่านแล้ว แต่ยังพบ brownout ในการใช้งานหลังจากนั้น ต้องทดสอบต่อเนื่องหลังแก้สาเหตุ
+- ผู้ใช้แจ้งแอปเดิม Connect แล้ว Disconnect และมี Connection reset by peer; ส่ง APK ทดสอบ TLS แล้ว และต้องจัดส่ง signed release ผ่าน Check Update โดยตรวจ signature/manifest ก่อนเผยแพร่
 - ชุดส่งต่อรับ implementation และเอกสารถึง `acd67dc` บน branch `dev` แล้ว และตรวจ working tree บนเซิร์ฟเวอร์ว่าง; หลัง hardware gates ผ่านต้องอัปเดตผลสุดท้ายอีกครั้งก่อนปิดงาน
 
 ไม่ได้ทดสอบการตัด WiFi router จริงหรือสร้าง firmware ที่ boot crash โดยจงใจ จึงไม่อ้างว่าครอบคลุมความขัดข้องทางไฟฟ้า/bootloader ทุกแบบ การทดสอบข้างต้นไม่ใช่การประกาศ release ใหม่บน GitHub หรือ rollout ไปทุกอุปกรณ์
