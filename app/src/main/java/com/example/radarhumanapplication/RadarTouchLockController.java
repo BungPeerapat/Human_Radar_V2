@@ -17,6 +17,10 @@ final class RadarTouchLockController implements AutoCloseable {
     private final int touchSlop;
     private final Runnable finishHold;
     private boolean locked;
+    private boolean consumingGesture;
+    private boolean holding;
+    private float holdX;
+    private float holdY;
     private int previousAccessibility;
 
     RadarTouchLockController(View content, View overlay, TextView unlockButton,
@@ -27,11 +31,10 @@ final class RadarTouchLockController implements AutoCloseable {
         this.stateChanged = stateChanged;
         touchSlop = ViewConfiguration.get(content.getContext()).getScaledTouchSlop();
         finishHold = () -> {
-            if (!locked || !unlockButton.isPressed()) return;
+            if (!locked || !holding) return;
             unlockButton.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
             setLocked(false);
         };
-        unlockButton.setOnTouchListener(this::onUnlockTouch);
         unlockButton.setOnClickListener(view -> {
             if (locked) announceUnlockHint();
         });
@@ -44,6 +47,10 @@ final class RadarTouchLockController implements AutoCloseable {
 
     boolean isLocked() {
         return locked;
+    }
+
+    boolean isConsumingGesture() {
+        return consumingGesture;
     }
 
     void setLocked(boolean next) {
@@ -70,33 +77,42 @@ final class RadarTouchLockController implements AutoCloseable {
     }
 
     void cancelPendingHold() {
+        holding = false;
         unlockButton.removeCallbacks(finishHold);
         unlockButton.setPressed(false);
         unlockButton.setText(R.string.radar_touch_unlock_button);
     }
 
-    private boolean onUnlockTouch(View view, MotionEvent event) {
-        if (!locked) return false;
+    /** Called before Activity dispatches to any child, including overlay controls/navigation. */
+    boolean consumeTouch(MotionEvent event) {
+        if (!locked && !consumingGesture) return false;
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 cancelPendingHold();
+                consumingGesture = true;
+                if (!locked || event.getPointerCount() != 1) break;
+                holdX = event.getRawX();
+                holdY = event.getRawY();
+                holding = true;
                 unlockButton.setPressed(true);
                 unlockButton.setText(R.string.radar_touch_unlock_holding);
                 unlockButton.postDelayed(finishHold, UNLOCK_HOLD_MS);
                 break;
             case MotionEvent.ACTION_MOVE:
-                if (event.getX() < -touchSlop || event.getY() < -touchSlop
-                        || event.getX() > view.getWidth() + touchSlop
-                        || event.getY() > view.getHeight() + touchSlop) {
+                if (event.getPointerCount() != 1
+                        || Math.hypot(event.getRawX() - holdX, event.getRawY() - holdY) > touchSlop) {
                     cancelPendingHold();
                 }
                 break;
             case MotionEvent.ACTION_UP:
-                cancelPendingHold();
-                view.performClick();
-                break;
             case MotionEvent.ACTION_CANCEL:
+                cancelPendingHold();
+                consumingGesture = false;
+                // Defer dialogs until the unlocking finger has lifted. Never forward this UP.
+                if (!locked) stateChanged.accept(false);
+                break;
             case MotionEvent.ACTION_POINTER_DOWN:
+            case MotionEvent.ACTION_OUTSIDE:
                 cancelPendingHold();
                 break;
             default:
@@ -108,5 +124,6 @@ final class RadarTouchLockController implements AutoCloseable {
     @Override
     public void close() {
         cancelPendingHold();
+        consumingGesture = false;
     }
 }

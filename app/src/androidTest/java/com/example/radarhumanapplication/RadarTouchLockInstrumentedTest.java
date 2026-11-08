@@ -136,6 +136,59 @@ public class RadarTouchLockInstrumentedTest {
     }
 
     @Test
+    public void movingOrAddingAFingerCancelsUnlockAndKeysCannotActivateControls() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            int[][] point = new int[1][];
+            scenario.onActivity(activity -> {
+                point[0] = center(activity.findViewById(R.id.radar_view));
+                activity.findViewById(R.id.btn_lock_touch).performClick();
+                View rotate = activity.findViewById(R.id.btn_manual_rotate);
+                rotate.setFocusableInTouchMode(true);
+                assertTrue(rotate.requestFocus());
+                int orientation = activity.getRequestedOrientation();
+                assertTrue(activity.dispatchKeyEvent(new android.view.KeyEvent(
+                        android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER)));
+                assertTrue(activity.dispatchKeyEvent(new android.view.KeyEvent(
+                        android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER)));
+                assertEquals("Enter must not activate a focused underlying control",
+                        orientation, activity.getRequestedOrientation());
+            });
+            long time = SystemClock.uptimeMillis();
+            pointer(MotionEvent.ACTION_DOWN, point[0], time);
+            pointer(MotionEvent.ACTION_MOVE, new int[]{point[0][0] + 100, point[0][1]}, time);
+            SystemClock.sleep(2200);
+            pointer(MotionEvent.ACTION_UP, point[0], time);
+            scenario.onActivity(activity -> assertEquals(View.VISIBLE,
+                    activity.findViewById(R.id.radar_touch_lock_overlay).getVisibility()));
+
+            time = SystemClock.uptimeMillis();
+            pointer(MotionEvent.ACTION_DOWN, point[0], time);
+            final long down = time;
+            scenario.onActivity(activity -> {
+                MotionEvent.PointerProperties[] props = new MotionEvent.PointerProperties[2];
+                MotionEvent.PointerCoords[] coords = new MotionEvent.PointerCoords[2];
+                for (int i = 0; i < 2; i++) {
+                    props[i] = new MotionEvent.PointerProperties();
+                    props[i].id = i;
+                    props[i].toolType = MotionEvent.TOOL_TYPE_FINGER;
+                    coords[i] = new MotionEvent.PointerCoords();
+                    coords[i].x = point[0][0] + i * 50;
+                    coords[i].y = point[0][1];
+                }
+                MotionEvent event = MotionEvent.obtain(down, SystemClock.uptimeMillis(),
+                        MotionEvent.ACTION_POINTER_DOWN | (1 << MotionEvent.ACTION_POINTER_INDEX_SHIFT),
+                        2, props, coords, 0, 0, 1, 1, 0, 0, android.view.InputDevice.SOURCE_TOUCHSCREEN, 0);
+                try { assertTrue(activity.dispatchTouchEvent(event)); }
+                finally { event.recycle(); }
+            });
+            SystemClock.sleep(2200);
+            pointer(MotionEvent.ACTION_UP, point[0], time);
+            scenario.onActivity(activity -> assertEquals(View.VISIBLE,
+                    activity.findViewById(R.id.radar_touch_lock_overlay).getVisibility()));
+        }
+    }
+
+    @Test
     public void backgroundingCancelsAnIncompleteUnlockHold() {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             int[][] button = new int[1][];

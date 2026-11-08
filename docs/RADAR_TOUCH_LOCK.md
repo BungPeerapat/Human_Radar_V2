@@ -4,9 +4,9 @@
 
 บนหน้า Radar แตะไอคอนรูปหน้าจอพร้อมแม่กุญแจในแถวปุ่มด้านบน แล้วหน้าจอจะแสดง “Radar touch locked”
 
-ขณะล็อก Radar ยังรับข้อมูลและวาดภาพตามปกติ แต่การแตะ Radar, ปุ่มควบคุม, bottom navigation และ Back จะไม่เปลี่ยนหน้า ปลดล็อกด้วยการกด “Hold 2 seconds to unlock” ค้างต่อเนื่อง 2 วินาที
+ขณะล็อก Radar ยังรับข้อมูลและวาดภาพตามปกติ แต่การแตะ Radar, ปุ่มควบคุม, bottom navigation และ Back จะไม่เปลี่ยนหน้า แตะไอคอน Touch lock เพื่อล็อกทันที ปลดล็อกด้วยการกดค้างนิ่งตรงไหนก็ได้บนพื้นที่แอปต่อเนื่อง 2 วินาที รวมพื้นที่เหนือ overlay หรือเมนู
 
-การแตะสั้น ยกนิ้วก่อนครบเวลา เลื่อนนิ้วออกนอกปุ่ม ใช้หลายนิ้ว หรือออกจาก foreground จะยกเลิกการกดค้าง ผู้ใช้ TalkBack ปลดล็อกผ่าน accessibility long-click ได้
+การแตะสั้น ยกนิ้วก่อนครบเวลา เลื่อนนิ้วเกิน touch slop ใช้หลายนิ้ว หรือออกจาก foreground จะยกเลิกการกดค้าง นิ้วที่ปลดล็อกจะถูก consume จนยกออก ไม่กดเมนูต่อ ผู้ใช้ TalkBack ปลดล็อกผ่าน accessibility long-click ของปุ่มคำแนะนำได้
 
 ## การคงสถานะ
 
@@ -26,4 +26,12 @@
 
 ส่งมอบ v1.1.2 / versionCode 96, CI 42448311832 success; ตรวจ public artifacts และ signing certificate แล้ว แจ้งผู้ใช้ผ่าน LINE บน SSH server
 
-Full Screen เป็นงานแยกใน task 004 ซึ่งเริ่มต่อหลัง deploy Touch lock ตามผู้ใช้แจ้ง
+Full Screen ส่งมอบแล้วใน v1.1.3 ตาม task 004
+
+## แก้ไขเพิ่มเติม v1.1.4
+
+เพิ่ม input guard ที่ Activity ก่อนส่ง touch events ถึง view ใด ๆ รวม generic motion และ key input ภายในแอป จึงบล็อกปุ่ม/เมนูแม้ view overlay ถูกซ่อนหรือเปลี่ยนลำดับโดยผิดพลาด การแจ้งอัปเดตรอให้ยกนิ้วที่ปลดล็อกก่อนแสดง dialog
+
+RED ยืนยันว่ารุ่นเดิมกดค้างบน canvas ไม่ปลดล็อก GREEN ผ่าน 62 JVM tests และ UI 9 tests ทั้งแนวนอน 30.930 วินาที/แนวตั้ง 29.598 วินาที ครอบคลุม canvas/menu hold, ไม่กดทะลุตอนยกนิ้ว, เลื่อน/หลายจุด, keyboard guard, background, recreation, fullscreen และ password autofill
+
+เตรียมเผยแพร่ v1.1.4 ผ่าน Check Update หลังตรวจ public artifacts

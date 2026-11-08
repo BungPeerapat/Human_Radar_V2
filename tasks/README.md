@@ -5,7 +5,9 @@
 ```text
 tasks/
   todo/
+    006-beep-reconnect-timing/task.md
   doing/
+    005-touch-lock-input-guard/task.md
   done/
     004-radar-fullscreen/task.md
     003-radar-touch-lock/task.md

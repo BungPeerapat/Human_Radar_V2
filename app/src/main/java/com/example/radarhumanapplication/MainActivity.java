@@ -5,6 +5,8 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.WindowManager;
+import android.view.MotionEvent;
+import android.view.KeyEvent;
 
 import androidx.activity.EdgeToEdge;
 import androidx.activity.OnBackPressedCallback;
@@ -56,6 +58,24 @@ public class MainActivity extends AppCompatActivity {
 
     private final ActivityResultLauncher<String> notifPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {});
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent event) {
+        if (touchLock != null && touchLock.consumeTouch(event)) return true;
+        return super.dispatchTouchEvent(event);
+    }
+
+    @Override
+    public boolean dispatchGenericMotionEvent(MotionEvent event) {
+        if (touchLock != null && touchLock.isLocked()) return true;
+        return super.dispatchGenericMotionEvent(event);
+    }
+
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (touchLock != null && touchLock.isLocked()) return true;
+        return super.dispatchKeyEvent(event);
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -222,7 +242,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void showPendingUpdateIfUnlocked() {
         if (pendingUpdate == null || isFinishing() || isDestroyed()
-                || (touchLock != null && touchLock.isLocked())
+                || (touchLock != null && (touchLock.isLocked() || touchLock.isConsumingGesture()))
                 || getSupportFragmentManager().isStateSaved()
                 || !getLifecycle().getCurrentState().isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
             return;
