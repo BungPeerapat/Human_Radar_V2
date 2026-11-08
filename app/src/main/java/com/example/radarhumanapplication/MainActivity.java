@@ -240,6 +240,10 @@ public class MainActivity extends AppCompatActivity {
         if (touchLock != null && activeFragment == radarFragment) touchLock.setLocked(true);
     }
 
+    boolean isRadarTouchLocked() {
+        return touchLock != null && touchLock.isLocked();
+    }
+
     private void showPendingUpdateIfUnlocked() {
         if (pendingUpdate == null || isFinishing() || isDestroyed()
                 || (touchLock != null && (touchLock.isLocked() || touchLock.isConsumingGesture()))

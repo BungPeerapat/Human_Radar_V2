@@ -6,12 +6,20 @@
 
 ## เกณฑ์ตรวจรับ
 
-- [ ] เปิด Touch lock ด้วย pointer tap จริงและทดสอบทุกเมนู/overlay
-- [ ] ปิด enabled ของ controls จริง พร้อม guard คำสั่ง Radar แม้ bypass touch dispatch
-- [ ] ครอบคลุม view ที่สร้างภายหลัง/recreation และคืน enabled state เดิมหลังปลดล็อก
-- [ ] กดค้าง 2 วินาทีปลดล็อก; Radar ยังอัปเดตข้อมูล; Full Screen ใช้ได้
+- [x] เปิด Touch lock ด้วย pointer tap จริงและทดสอบทุกเมนู/overlay
+- [x] ปิด enabled ของ controls จริง พร้อม guard คำสั่ง Radar แม้ bypass touch dispatch
+- [x] ครอบคลุม view ที่สร้างภายหลัง/recreation และคืน enabled state เดิมหลังปลดล็อก
+- [x] กดค้าง 2 วินาทีปลดล็อก; Radar ยังอัปเดตข้อมูล; Full Screen ใช้ได้
 - [ ] Review, tests, release, public mirror verification, push/sync และ LINE
 
 ## ผู้รับผิดชอบ
 
 Codex; เริ่มจาก c714728 วันที่ 2026-11-09 ยังต้องให้ผู้ใช้ตรวจรับบน vivo หลังส่ง release
+
+## หลักฐาน
+
+- RED ae52191: control fence test ยืนยัน controls เดิมยัง enabled ขณะล็อก (ไม่อ้างว่าเป็นการ reproduce สาเหตุเฉพาะ vivo)
+- แก้สภาพแวดล้อม emulator System UI ANR ด้วย cold boot ก่อนใช้ผล pointer tests ตรวจรับ
+- GREEN: 69 JVM tests/build ผ่าน; UI 11 tests แนวตั้งผ่าน 40.336 s รวม physical tap, command guard, original-state/late-child restoration และ regressions
+- UI 11 tests แนวนอนผ่าน 42.072 s; reviewer APPROVE ไม่มี finding ค้าง
+- Firmware บนบอร์ดยังเป็น 1.1.0; ไม่สั่ง OTA/restart และไม่ตรวจเซนเซอร์ตามคำสั่งผู้ใช้

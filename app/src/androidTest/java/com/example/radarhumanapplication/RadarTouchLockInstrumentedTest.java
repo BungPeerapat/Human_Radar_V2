@@ -217,7 +217,8 @@ public class RadarTouchLockInstrumentedTest {
                 activity.findViewById(R.id.btn_lock_touch).performClick();
                 View rotate = activity.findViewById(R.id.btn_manual_rotate);
                 rotate.setFocusableInTouchMode(true);
-                assertTrue(rotate.requestFocus());
+                assertFalse(rotate.isEnabled());
+                assertFalse(rotate.requestFocus());
                 int orientation = activity.getRequestedOrientation();
                 assertTrue(activity.dispatchKeyEvent(new android.view.KeyEvent(
                         android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER)));

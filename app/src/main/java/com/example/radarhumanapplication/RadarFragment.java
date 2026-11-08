@@ -131,10 +131,10 @@ public class RadarFragment extends Fragment
         activeDeviceDot   = v.findViewById(R.id.active_device_dot);
         activeDeviceFw    = v.findViewById(R.id.active_device_fw);
         if (btnMultiDevice != null) {
-            btnMultiDevice.setOnClickListener(view -> openMultiDevicePicker());
+            bindRadarAction(btnMultiDevice, this::openMultiDevicePicker);
         }
         if (activeDeviceChip != null) {
-            activeDeviceChip.setOnClickListener(view -> openDevicePickerForRadar());
+            bindRadarAction(activeDeviceChip, this::openDevicePickerForRadar);
         }
         refreshActiveDeviceChip();
 
@@ -146,19 +146,19 @@ public class RadarFragment extends Fragment
         });
 
         // Tap radar to toggle fullscreen
-        radarView.setOnClickListener(view -> toggleFullscreen());
+        bindRadarAction(radarView, this::toggleFullscreen);
 
-        btnKeepScreenOn.setOnClickListener(view -> toggleKeepScreenOn());
-        btnManualRotate.setOnClickListener(view -> manualRotate());
-        btnLockOrientation.setOnClickListener(view -> toggleLockOrientation());
-        v.findViewById(R.id.btn_lock_touch).setOnClickListener(view -> {
+        bindRadarAction(btnKeepScreenOn, this::toggleKeepScreenOn);
+        bindRadarAction(btnManualRotate, this::manualRotate);
+        bindRadarAction(btnLockOrientation, this::toggleLockOrientation);
+        bindRadarAction(v.findViewById(R.id.btn_lock_touch), () -> {
             if (getActivity() instanceof MainActivity) {
                 ((MainActivity) getActivity()).lockRadarTouches();
             }
         });
-        btnNightMode.setOnClickListener(view -> toggleNightMode());
-        btnSnapshot.setOnClickListener(view -> takeSnapshot());
-        btnExitFullscreen.setOnClickListener(view -> exitFullscreen());
+        bindRadarAction(btnNightMode, this::toggleNightMode);
+        bindRadarAction(btnSnapshot, this::takeSnapshot);
+        bindRadarAction(btnExitFullscreen, this::exitFullscreen);
 
         // Restore persisted UX prefs
         applyKeepScreenOn(uiPrefs.isKeepScreenOn());
@@ -362,6 +362,15 @@ public class RadarFragment extends Fragment
         if (radarView != null) {
             radarView.setAlertDistancesMm(AlertManager.getInstance().getEnabledDistancesMm());
         }
+    }
+
+    private void bindRadarAction(View view, Runnable action) {
+        view.setOnClickListener(clicked -> {
+            if (!isAdded()) return;
+            if (getActivity() instanceof MainActivity
+                    && ((MainActivity) getActivity()).isRadarTouchLocked()) return;
+            action.run();
+        });
     }
 
     private void toggleFullscreen() {

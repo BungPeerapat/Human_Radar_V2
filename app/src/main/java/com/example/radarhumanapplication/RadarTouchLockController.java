@@ -4,7 +4,11 @@ import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
+import android.view.ViewTreeObserver;
 import android.widget.TextView;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /** An in-app touch guard. Radar rendering and MQTT continue behind the overlay. */
@@ -22,6 +26,10 @@ final class RadarTouchLockController implements AutoCloseable {
     private float holdX;
     private float holdY;
     private int previousAccessibility;
+    private final Map<View, Boolean> enabledStates = new LinkedHashMap<>();
+    private final ViewTreeObserver.OnGlobalLayoutListener controlFence = () -> {
+        if (locked) disableVisibleControls();
+    };
 
     RadarTouchLockController(View content, View overlay, TextView unlockButton,
                              Consumer<Boolean> stateChanged) {
@@ -60,12 +68,15 @@ final class RadarTouchLockController implements AutoCloseable {
         if (next) {
             previousAccessibility = content.getImportantForAccessibility();
             content.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+            disableVisibleControls();
+            content.getViewTreeObserver().addOnGlobalLayoutListener(controlFence);
             overlay.setVisibility(View.VISIBLE);
             overlay.bringToFront();
             unlockButton.requestFocus();
             announceUnlockHint();
         } else {
             overlay.setVisibility(View.GONE);
+            restoreControls();
             content.setImportantForAccessibility(previousAccessibility);
         }
         stateChanged.accept(next);
@@ -74,6 +85,32 @@ final class RadarTouchLockController implements AutoCloseable {
     void announceUnlockHint() {
         unlockButton.announceForAccessibility(
                 unlockButton.getContext().getString(R.string.radar_touch_unlock_hint));
+    }
+
+    private void rememberVisibleControls(View view) {
+        if (view.getVisibility() != View.VISIBLE) return;
+        enabledStates.putIfAbsent(view, view.isEnabled());
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) rememberVisibleControls(group.getChildAt(i));
+        }
+    }
+
+    private void disableVisibleControls() {
+        // Snapshot the entire visible tree BEFORE disabling any parent that propagates state.
+        // Hidden tabs retain their own connection-dependent enabled states.
+        rememberVisibleControls(content);
+        for (View view : enabledStates.keySet()) view.setEnabled(false);
+    }
+
+    private void restoreControls() {
+        ViewTreeObserver observer = content.getViewTreeObserver();
+        if (observer.isAlive()) observer.removeOnGlobalLayoutListener(controlFence);
+        // Restore parents before children so a container cannot re-enable an originally disabled child.
+        for (Map.Entry<View, Boolean> state : enabledStates.entrySet()) {
+            state.getKey().setEnabled(state.getValue());
+        }
+        enabledStates.clear();
     }
 
     void cancelPendingHold() {
@@ -124,6 +161,7 @@ final class RadarTouchLockController implements AutoCloseable {
     @Override
     public void close() {
         cancelPendingHold();
+        restoreControls();
         consumingGesture = false;
     }
 }

@@ -37,3 +37,16 @@ RED ยืนยันว่ารุ่นเดิมกดค้างบน 
 เผยแพร่ v1.1.4 / versionCode 101 จาก 6bf1ebb ผ่าน Check Update แล้ว CI 42462864452 success ตรวจ public app/firmware/bridge manifests และ binary hash/size ผ่าน APK 8,169,315 bytes, SHA-256 87d1051998a66de5cb5f803223e4c2eb9231b4a1a79acd50099793af456a2d83 ลายเซ็นตรงรุ่นก่อนและตรวจ input guard/รหัสโปรเจกต์ใน APK แล้ว
 
 Push GitHub, sync SSH ผ่าน Tailscale และยืนยันส่ง LINE จาก server journal สำเร็จ การตรวจอาการ beep/บอร์ด offline แยกบันทึกใน docs/BEEP_CONNECTION_DIAGNOSIS.md และ task 006 ยังไม่มีการเปลี่ยน firmware หรือระบบจ่ายไฟ
+
+## ตรวจรายงานเมนูยังกดได้ — v1.1.6
+
+ผู้ใช้ยืนยันว่าข้อความล็อกแสดงบน vivo แต่ยังใช้เมนู Radar ได้ จึงเพิ่มการป้องกันนอกเหนือจาก Activity input dispatch:
+
+- ปิด enabled จริงของ view tree ที่มองเห็น รวม Radar controls และ bottom navigation พร้อมบันทึกค่าเดิม
+- View ที่เพิ่มหลังเปิดล็อกถูกปิดผ่าน global layout listener; hidden tabs เก็บ enabled state ของตัวเอง
+- ทุกคำสั่งปุ่ม Radar ตรวจสถานะล็อกก่อนทำงาน รวม direct performClick ที่ไม่ผ่าน touch dispatch
+- ปลดล็อกแล้วคืนค่า enabled เดิม โดยไม่เปิดปุ่มที่เดิมถูกปิดอยู่ และถอด listener ตอนจบ lifecycle
+
+เพิ่มการตรวจด้วย pointer tap จริงที่ปุ่ม Touch Lock ไม่ใช้เฉพาะ performClick เพื่อเปิดล็อก จากนั้นทดสอบเมนู, direct rotate/snapshot action และการคืนสถานะ ข้อมูลเรดาร์ทดสอบยังอัปเดตผ่าน dispatcher ขณะ view ถูกปิด input
+
+ทดสอบบน emulator ไม่ใช่หลักฐานว่ารายงานเฉพาะ vivo หายแล้ว งาน 008 จะรอผู้ใช้ตรวจรับหลังส่งรุ่นใหม่ ไม่ตรวจเซนเซอร์เพิ่มเติมตามผู้ใช้ยืนยัน
