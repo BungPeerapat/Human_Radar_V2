@@ -4,7 +4,7 @@
 
 ใช้เซิร์ฟเวอร์เป็นพื้นที่พัฒนาหลักหลังตรวจรับ MQTT และ OTA บน ESP32 จริง โค้ดที่ build ผ่านยังไม่ถือว่าผ่านการตรวจรับ hardware ให้ตรวจผลล่าสุดใน `tasks/doing/` หรือ `tasks/done/` ก่อนเริ่มงานต่อ
 
-ณ 2026-11-08: MQTT server และ SSH ผ่าน Tailscale พร้อม, implementation checkpoint `775ea41`, firmware หลัก/bridge build บน Linux ได้แล้ว งาน 001–002 ยังอยู่ `doing`: ตัดไฟ OTA/อัปเดตซ้ำและ UART targets ผ่านแล้ว เผยแพร่ signed v1.1.0 ให้ผู้ใช้ผ่าน Check Update แล้ว แต่ยังต้องตรวจ brownout ช่วงบูตหลัง OTA บน `HumanRadarBung` (ESP32-D0WD-V3, flash 4 MB, MAC `08:d1:f9:34:91:b4`)
+ณ 2026-11-08: MQTT server และ SSH ผ่าน Tailscale พร้อม, implementation checkpoint `775ea41`, firmware หลัก/bridge build บน Linux ได้แล้ว งาน 002 เสร็จตามขอบเขตซอฟต์แวร์ที่ผู้ใช้รับรอง; งาน 001 เหลือ App patch เติม Password ตัดไฟ OTA/อัปเดตซ้ำและ UART targets ผ่านแล้ว และเผยแพร่ signed v1.1.0 ผ่าน Check Update บน `HumanRadarBung` (ESP32-D0WD-V3, flash 4 MB, MAC `08:d1:f9:34:91:b4`)
 
 ## ผลส่งต่อ checkout ที่ตรวจแล้ว
 
@@ -127,3 +127,9 @@ journalctl -u human-radar-alert.service --since '-5 min' --no-pager
 3. อ่านผลทดสอบ hardware ล่าสุด; ห้ามเปลี่ยน checklist เป็นผ่านจากผล simulator หรือ build
 4. ยืนยันว่า OTA รอบที่สองและเส้นทางกู้คืนผ่านก่อน rollout อุปกรณ์ทั้งหมด
 5. บันทึกขั้นตอนถัดไปและปัญหาคงค้างใน `task.md` โดยไม่ใส่ secrets
+
+## รหัสกลางใน APK ตามผู้ใช้เลือก
+
+App patch ใช้ GitHub Actions secret `PROJECT_MQTT_PASSWORD` ส่งผ่าน build environment ไป `BuildConfig` เพื่อให้ปุ่ม project broker เติม Password ได้ทุกเครื่อง รหัสจริงไม่อยู่ใน Git แต่ดึงออกจาก APK ได้ ผู้ใช้เลือกวิธีนี้โดยรับทราบแล้ว เมื่อหมุนรหัส broker ต้องเปลี่ยน CI secret และออก APK ใหม่ให้ตรงกัน
+
+ผู้ใช้แจ้งจ่าย 5V ให้ ESP32/Sensor ผ่านโมดูล และให้หยุดตรวจชุดจ่ายไฟ จึงเก็บ brownout เป็นข้อสังเกตตาม raw evidence โดยไม่ไล่แก้ฮาร์ดแวร์ต่อ

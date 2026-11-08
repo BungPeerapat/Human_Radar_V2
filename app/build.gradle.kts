@@ -5,6 +5,7 @@ plugins {
 // Version derived from env (CI sets these from the git tag) or defaults for local builds.
 val appVersionName: String = System.getenv("APP_VERSION_NAME") ?: "1.0.0"
 val appVersionCode: Int = (System.getenv("APP_VERSION_CODE") ?: "1").toInt()
+val projectMqttPassword: String = System.getenv("PROJECT_MQTT_PASSWORD") ?: ""
 
 // Manifest URL for the in-app updater. CI sets this via env var; local builds fall back
 // to the project's GitHub Releases "latest" redirect so a debug-installed APK can still
@@ -28,6 +29,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "UPDATE_MANIFEST_URL", "\"$updateManifestUrl\"")
+        buildConfigField("String", "PROJECT_MQTT_PASSWORD", groovy.json.JsonOutput.toJson(projectMqttPassword))
     }
 
     signingConfigs {

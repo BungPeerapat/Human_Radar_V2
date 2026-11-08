@@ -101,14 +101,14 @@ Hash ยืนยันว่าไฟล์ตรงกับ metadata ที�
 
 - [x] Android, firmware หลัก, Arduino tree และ bridge มี implementation ตรงกันและ build/test ตามผลที่บันทึก
 - [x] ตรวจ auth/ACL, TLS/WSS, broker restart และ OTA/recovery บนบอร์ดทดสอบตามผลในเอกสาร
-- [x] Git checkout บนเซิร์ฟเวอร์รับ implementation และเอกสารที่ commit แล้ว; ไม่ได้เผยแพร่ release ใหม่บน GitHub
+- [x] Git checkout บนเซิร์ฟเวอร์รับ implementation/เอกสาร และเผยแพร่ v1.1.0 บน GitHub แล้ว
 - [x] ผ่านการตัดไฟที่ progress 19% และ OTA รอบถัดไปบนบอร์ดจริง พร้อม raw evidence
 - [x] มี targets จาก HLK-LD2450 จริงผ่าน MQTT ถึง Android emulator
-- [ ] แก้ brownout ของบอร์ดทดสอบและยืนยัน health/targets ต่อเนื่องหลังแก้ไฟเลี้ยง
+- ข้อยกเว้นตามผู้ใช้: หยุดตรวจแก้ชุดจ่ายไฟ; บันทึก brownout ไว้เป็นข้อสังเกต ไม่ถือว่าเป็นผลรับรองการแก้ฮาร์ดแวร์
 - [x] เผยแพร่ signed v1.1.0 ด้วยคีย์เดิมและ manifest versionCode 91; ผู้ใช้ยืนยันอัปเดตแล้วต่อ MQTT ได้
-- [ ] หลัง hardware gates ผ่าน ให้คืนค่าบอร์ดเป็น transport ที่ต้องการใช้งาน ตรวจ health/config/OTA และคง provisioning ของอุปกรณ์
+- [x] บอร์ดใช้ project WSS 9002 ที่รองรับ; Android ใช้ TLS 8883 บน broker เดียวกัน ตรวจ health/config/OTA แล้ว โดยคง WiFi/NVS เดิม
 - [x] ปิด HTTPS container ทดสอบและลบ UFW rules 9443 เฉพาะงานนี้แล้ว; recovery binaries ยังคงอยู่และใช้ public GitHub OTA ได้
-- [ ] สรุปผลสุดท้าย ย้าย Tasks 001–002 ไป done และอัปเดต checkout บนเซิร์ฟเวอร์ก่อน rollout
+- [x] สรุป OTA และย้ายงาน 002 ไป done ตามขอบเขตที่ผู้ใช้ยืนยัน; งาน 001 เหลือ App patch เติม Password
 
 ## หลักฐานการตรวจรับ
 

@@ -230,7 +230,13 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+          PROJECT_MQTT_PASSWORD: ${{ secrets.PROJECT_MQTT_PASSWORD }}
+        run: |
+          if [ -z "$PROJECT_MQTT_PASSWORD" ]; then
+            echo "::error::PROJECT_MQTT_PASSWORD secret is required for project broker autofill"
+            exit 1
+          fi
+          ./gradlew :app:testDebugUnitTest :app:assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
 
       - name: Inspect build outputs
         if: always()

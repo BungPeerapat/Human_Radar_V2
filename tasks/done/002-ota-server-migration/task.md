@@ -32,7 +32,7 @@
 - [x] ตัดไฟจริงที่ OTA 19%, บูต image เดิมได้ และ OTA ไป test2/กลับ server-built firmware สำเร็จหลังเสียบไฟกลับ
 - [x] ยืนยันหลังอัปเดต, manual rollback และ bridge recovery ว่ายังสั่ง OTA รอบถัดไปได้ พร้อม WiFi/MQTT settings ที่ใช้งานได้
 - [x] เขียน migration runbook, recovery runbook และ checklist ก่อน release ใน `docs/OTA_SERVER_MIGRATION.md`
-- [ ] ตรวจรับ hardware gates และแก้ปัญหาที่พบก่อนอนุญาต rollout งาน `001`
+- [x] ตรวจรับ OTA/targets/recovery บนบอร์ดจริงแล้ว; ผู้ใช้ให้หยุดตรวจชุดจ่ายไฟและรับขอบเขตซอฟต์แวร์ โดยบันทึก brownout เป็นข้อสังเกต
 
 ## เกณฑ์ตรวจรับ
 
@@ -64,3 +64,5 @@
 - ปิด temporary HTTPS container และ UFW 9443 ของการทดสอบแล้ว เก็บ recovery binaries/private evidence ไว้
 
 - Controlled restart ผ่าน 123.7 วินาที/695 targets แต่ controlled OTA หลังติดตั้งสำเร็จยังพบ brownout เพิ่ม 4 ครั้งโดยไม่พบ MQTT Restart แทรก; ผู้ใช้ยืนยันใช้ชุดจ่ายไฟในตัวอุปกรณ์ รอแยกทดสอบ USB charger ทางเดียวก่อนปิด gate
+
+- ปิดงานตามผู้ใช้ยืนยันว่าระบบใช้งานปกติและให้หยุดตรวจชุดจ่ายไฟ: MQTT/HTTP OTA, integrity rejection, bridge, rollback, power-cut recovery และ public v1.1.0 ผ่านจริง ไม่อ้างว่า hardware brownout ถูกแก้แล้ว

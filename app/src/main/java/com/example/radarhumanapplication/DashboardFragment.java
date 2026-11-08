@@ -117,14 +117,14 @@ public class DashboardFragment extends Fragment
         if (projectBroker != null) projectBroker.setOnClickListener(x ->
                 new AlertDialog.Builder(requireContext())
                         .setTitle("Use project MQTT")
-                        .setMessage("Fill in the project's TLS broker and username. Enter the "
-                                + "project MQTT password, then tap Connect. Saved profiles are "
+                        .setMessage("Fill in the project's TLS broker, username and password, "
+                                + "then tap Connect. Saved profiles are "
                                 + "kept; configure the ESP32's broker separately before testing OTA.")
                         .setPositiveButton("Use project broker", (dialog, which) -> {
                             etHost.setText(BrokerEndpoint.DEFAULT_HOST);
                             etPort.setText(String.valueOf(BrokerEndpoint.DEFAULT_PORT));
                             etUsername.setText(BrokerEndpoint.DEFAULT_USERNAME);
-                            etPassword.setText("");
+                            etPassword.setText(BuildConfig.PROJECT_MQTT_PASSWORD);
                         })
                         .setNegativeButton("Cancel", null).show());
         tvMqttStatus = v.findViewById(R.id.tv_mqtt_status);

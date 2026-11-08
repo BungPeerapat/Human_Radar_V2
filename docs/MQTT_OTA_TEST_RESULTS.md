@@ -70,7 +70,7 @@
 - Controlled restart: ส่งคำสั่งหนึ่งครั้งแล้วตรวจ 123.7 วินาที; boots 981 → 982, reset reason 3 (software), brownout 746 คงเดิม, health 16 samples ไม่มี timeout/คำสั่ง Restart แทรก และ targets 695 ข้อความ error count 0; ผ่าน
 - Controlled OTA จาก public v1.1.0: ตรวจ SHA/commit แล้ว boots 985 → 986, reset reason 3 และ bo 749 คงเดิมในตอนกลับมาออนไลน์ แสดงว่าติดตั้งและรีบูต OTA สำเร็จ
 - ระหว่างติดตามหลัง OTA 64.5 วินาที พบ reset reason 9, bo 749 → 753, boots 986 → 991, health timeout 2 ครั้ง และ targets 227 ข้อความ; ไม่พบ Restart/OTA อื่นผ่าน MQTT ในช่วงนี้ จึงไม่ผ่านเกณฑ์ไฟเลี้ยงต่อเนื่อง
-- ไม่ปิด brownout detector และไม่ล้าง counters เพื่อกลบผล; กำลังขอทดสอบ ESP32 ผ่าน USB charger เพียงทางเดียว โดยตัดไฟจากชุดจ่ายในอุปกรณ์ที่เข้า ESP32 ก่อน
+- ไม่ปิด brownout detector และไม่ล้าง counters เพื่อกลบผล; เคยเสนอทดสอบแยกด้วย USB charger แต่ผู้ใช้สั่งไม่ตรวจชุดจ่ายไฟต่อ จึงไม่ดำเนินการทดสอบนี้
 - Schematic ที่อยู่ใน repository ระบุ LiPo 3.7V, TP4056 และ XL6009; datasheet ของ XL6009 ระบุ operating input 5–32V จึงเป็นข้อสงสัยที่ต้องเทียบกับวงจรจริง ไม่ใช่ผลวัดยืนยันแล้ว: https://www.mouser.com/catalog/specsheets/DFRobot_03312022_DF00123_DC_DC_Converter_XL60091_DataSheet.pdf
 - Raw evidence: `controlled-restart-result.json`, `controlled-published-ota-result.json` อยู่ในพื้นที่หลักฐานส่วนตัวของเซิร์ฟเวอร์/Windows ห้ามนำ config/NVS backups มารวมใน Git
 
@@ -87,10 +87,10 @@
 9. Log การ save config มี credentials — เปลี่ยนเป็นข้อความที่ไม่แสดง body
 10. Offline LWT อาจถูกใช้ยืนยัน firmware — ต้องเป็นสถานะ online และรุ่นตรงตามเงื่อนไข
 
-## เกณฑ์ที่ยังรอยืนยัน
+## ขอบเขตตรวจรับตามผู้ใช้และงานที่เหลือ
 
-- ตรวจและแก้ไฟเลี้ยงของบอร์ด/โมดูล: การตัดไฟระหว่าง OTA และ OTA ซ้ำผ่านแล้ว แต่ยังพบ brownout ในการใช้งานหลังจากนั้น ต้องทดสอบต่อเนื่องหลังแก้สาเหตุ
-- ผู้ใช้เดิมได้รับ signed v1.1.0 ผ่าน Check Update และยืนยันเชื่อมต่อได้แล้ว; ประเด็นที่ยังเปิดคือ brownout ช่วงบูตและความต่อเนื่องของ UART หลังเปลี่ยนไฟ
+- ผู้ใช้แจ้งว่าระบบใช้งานปกติ ให้หยุดตรวจชุดจ่ายไฟ และยืนยันจ่าย 5V ให้ ESP32/Sensor ผ่านโมดูล จึงปิดงาน OTA ตามขอบเขตซอฟต์แวร์ โดยคงผล brownout ไว้เป็นข้อสังเกต ไม่ได้อ้างว่าแก้ hardware แล้ว
+- ผู้ใช้ได้รับ signed v1.1.0 ผ่าน Check Update และยืนยันเชื่อมต่อได้แล้ว; พบ UI bug ที่ปุ่ม project broker ล้าง Password จึงกำลังแก้และส่งมอบ App patch
 - ชุดส่งต่อรับ implementation และเอกสารถึง `acd67dc` บน branch `dev` แล้ว และตรวจ working tree บนเซิร์ฟเวอร์ว่าง; หลัง hardware gates ผ่านต้องอัปเดตผลสุดท้ายอีกครั้งก่อนปิดงาน
 
 ไม่ได้ทดสอบการตัด WiFi router จริงหรือสร้าง firmware ที่ boot crash โดยจงใจ จึงไม่อ้างว่าครอบคลุมความขัดข้องทางไฟฟ้า/bootloader ทุกแบบ การทดสอบข้างต้นไม่ใช่การประกาศ release ใหม่บน GitHub หรือ rollout ไปทุกอุปกรณ์
@@ -116,3 +116,16 @@ adb shell am instrument -w \
 ```
 
 เมื่อเห็น `READY_FOR_BROKER_RESTART` ให้ restart broker ทดสอบเพียงครั้งเดียว การรันบน production ต้องรู้ว่ามี client อื่นได้รับผลกระทบหรือไม่; ใน session นี้มีการประสานขั้นตอนกับอุปกรณ์ทดสอบ
+
+## การยืนยันขอบเขตและการแก้ปุ่ม Password
+
+ผู้ใช้ยืนยันใช้งานปกติและให้หยุดตรวจฮาร์ดแวร์ชุดจ่ายไฟ งาน MQTT/OTA รับรองจากการทดสอบจริงตามผลข้างต้น ค่า brownout ไม่ได้ถูกล้างหรือแก้กลบ
+
+ผู้ใช้เลือกให้ใส่รหัสกลางใน APK หลังรับทราบว่าสามารถดึงรหัสจาก APK สาธารณะได้ การแก้ปุ่มใช้ `PROJECT_MQTT_PASSWORD` ผ่าน CI secret/BuildConfig โดยไม่บันทึกรหัสจริงลง Git; มี opt-in Android UI regression ที่ใช้ fixture ส่วนตัว
+
+### ผลทดสอบแก้ Password autofill
+
+- Android UI regression เดิมล้มเหลวที่ข้อความ `Project button must fill the provisioned password` (5.465 วินาที); หลังแก้ผ่าน `OK (1 test)` ใน 6.925 วินาที
+- ตรวจปุ่มจริง/confirmation dialog แล้ว Host, Port, Username และ Password ตรงกับ private fixture ของ broker โดยไม่พิมพ์รหัสใน assertion
+- JVM 62 tests ผ่าน และ debug/test APK build ผ่าน; CI secret `PROJECT_MQTT_PASSWORD` ตั้งค่าแล้วและ workflow ปฏิเสธ release หากไม่มีค่า
+- ผู้ใช้ยืนยันเลือกใส่รหัสกลางใน APK สำหรับทุกเครื่อง หลังรับทราบการดึงรหัสจาก APK สาธารณะ; source ใช้ environment/BuildConfig เท่านั้น ไม่มีรหัสจริงใน Git

@@ -5,10 +5,10 @@
 ```text
 tasks/
   todo/
-    001-primary-mqtt/task.md
-    002-ota-server-migration/task.md
   doing/
+    001-primary-mqtt/task.md
   done/
+    002-ota-server-migration/task.md
 ```
 
 ## สถานะและวิธีทำงาน
